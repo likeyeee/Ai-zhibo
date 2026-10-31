@@ -20,8 +20,25 @@ export interface AppConfig {
   ttsProvider: TtsProviderId;
   ttsHttpUrl: string;
   ttsApiKey: string;
+  cloneRefAudio: string;
+  cloneRefText: string;
+  cosyvoiceUrl: string;
+  gptSovitsUrl: string;
+  f5Url: string;
   avatarProvider: AvatarProviderId;
   avatarVideoUrl: string;
+  avatarHttpUrl: string;
+  avatarApiKey: string;
+  musetalkUrl: string;
+  heygemVideoUrl: string;
+  heygemTtsUrl: string;
+  heygemDataDir: string;
+  heygemVideoPath: string;
+  heygemHostVideos: string;
+  heygemReferenceAudio: string;
+  heygemReferenceText: string;
+  heygemScriptWaitMs: number;
+  heygemReplyWaitMs: number;
   simulateViewers: boolean;
   simulateIntervalMs: number;
   speechPauseScale: number;
@@ -74,11 +91,28 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     llmBaseUrl: text(env, 'LLM_BASE_URL', 'https://api.openai.com/v1').replace(/\/$/, ''),
     llmApiKey: text(env, 'LLM_API_KEY', ''),
     llmModel: text(env, 'LLM_MODEL', 'gpt-4o-mini'),
-    ttsProvider: tts === 'http' ? 'http' : 'mock',
+    ttsProvider: ttsProvider(tts),
     ttsHttpUrl: text(env, 'TTS_HTTP_URL', ''),
     ttsApiKey: text(env, 'TTS_API_KEY', ''),
-    avatarProvider: avatar === 'video' ? 'video' : 'local',
+    cloneRefAudio: text(env, 'CLONE_REF_AUDIO', ''),
+    cloneRefText: text(env, 'CLONE_REF_TEXT', ''),
+    cosyvoiceUrl: text(env, 'COSYVOICE_URL', '').replace(/\/$/, ''),
+    gptSovitsUrl: text(env, 'GPT_SOVITS_URL', '').replace(/\/$/, ''),
+    f5Url: text(env, 'F5_TTS_URL', '').replace(/\/$/, ''),
+    avatarProvider: avatarProvider(avatar),
     avatarVideoUrl: text(env, 'AVATAR_VIDEO_URL', ''),
+    avatarHttpUrl: text(env, 'AVATAR_HTTP_URL', ''),
+    avatarApiKey: text(env, 'AVATAR_API_KEY', ''),
+    musetalkUrl: text(env, 'MUSETALK_URL', '').replace(/\/$/, ''),
+    heygemVideoUrl: text(env, 'HEYGEM_VIDEO_URL', 'http://127.0.0.1:8383').replace(/\/$/, ''),
+    heygemTtsUrl: text(env, 'HEYGEM_TTS_URL', 'http://127.0.0.1:18180').replace(/\/$/, ''),
+    heygemDataDir: text(env, 'HEYGEM_DATA_DIR', ''),
+    heygemVideoPath: text(env, 'HEYGEM_VIDEO_PATH', ''),
+    heygemHostVideos: text(env, 'HEYGEM_HOST_VIDEOS', ''),
+    heygemReferenceAudio: text(env, 'HEYGEM_REFERENCE_AUDIO', ''),
+    heygemReferenceText: text(env, 'HEYGEM_REFERENCE_TEXT', ''),
+    heygemScriptWaitMs: clamp(Math.round(num(env, 'HEYGEM_SCRIPT_WAIT_MS', 0)), 0, 180000),
+    heygemReplyWaitMs: clamp(Math.round(num(env, 'HEYGEM_REPLY_WAIT_MS', 0)), 0, 180000),
     simulateViewers: flag(env, 'SIMULATE_VIEWERS', true),
     simulateIntervalMs: clamp(Math.round(num(env, 'SIMULATE_INTERVAL_MS', 9000)), 2000, 120000),
     speechPauseScale: clamp(num(env, 'SPEECH_PAUSE_SCALE', 1), 0, 3),
@@ -94,6 +128,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ingestToken: text(env, 'INGEST_TOKEN', ''),
     outputSecret: text(env, 'OUTPUT_SECRET', ''),
   };
+}
+
+function ttsProvider(value: string): TtsProviderId {
+  if (value === 'http' || value === 'cosyvoice' || value === 'gpt-sovits' || value === 'f5') return value;
+  return 'mock';
+}
+
+function avatarProvider(value: string): AvatarProviderId {
+  if (value === 'video' || value === 'http' || value === 'livekit' || value === 'heygem' || value === 'musetalk') return value;
+  return 'local';
 }
 
 function outputProvider(value: string): OutputConfigId {

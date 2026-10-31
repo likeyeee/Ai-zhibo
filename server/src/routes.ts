@@ -5,14 +5,14 @@ import { pipeline } from 'node:stream/promises';
 import '@fastify/multipart';
 import '@fastify/websocket';
 import { IngressClient, IngressInput } from 'livekit-server-sdk';
-import { PLATFORMS, type Persona, type PlatformId, type SystemInfo } from '@lingbo/shared';
+import { normalizeStoredPersona, PLATFORMS, type Persona, type PlatformId, type SystemInfo } from '@lingbo/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ZodError, ZodType } from 'zod';
 import { z } from 'zod';
 import type { AppConfig } from './config';
 import type { SessionDirector } from './director';
 import type { LiveHub } from './liveHub';
-import type { AvatarPresentation } from './providers/avatar';
+import type { AvatarProvider } from './providers/avatar';
 import { normalizeInbound } from './providers/ingest';
 import { livekitApiHost } from './providers/output/livekitEgress';
 import type { OutputManager } from './providers/output/manager';
@@ -28,7 +28,7 @@ export interface Deps {
   director: SessionDirector;
   llm: LlmProvider;
   tts: TtsProvider;
-  avatar: AvatarPresentation;
+  avatar: AvatarProvider;
   realtime: RealtimeProvider;
   output: OutputManager;
 }
@@ -38,6 +38,8 @@ const personaSchema = z.object({
   tone: z.enum(['enthusiastic', 'professional', 'gentle', 'humorous']),
   extraNotes: z.string().trim().max(300).default(''),
   speechRate: z.number().min(0.6).max(1.6),
+  hostId: z.string().trim().max(20).optional(),
+  voice: z.string().trim().max(40).optional(),
 });
 
 const productSchema = z.object({
@@ -65,9 +67,29 @@ const productSchema = z.object({
   description: z.string().trim().max(1000).default(''),
 });
 
+const showSchema = z.object({
+  mode: z.enum(['auto', 'semi']).optional(),
+  paused: z.boolean().optional(),
+  loop: z.boolean().optional(),
+  showAiLabel: z.boolean().optional(),
+  scene: z.enum(['studio', 'greenscreen']).optional(),
+  portraitUrl: z.string().trim().max(500).nullable().optional(),
+});
+
 const sessionSchema = z.object({
   productIds: z.array(z.string().trim().min(1)).min(1, '请至少选择一个商品').max(30),
   persona: personaSchema.optional(),
+  show: showSchema.optional(),
+});
+
+const controlSchema = z.object({
+  action: z.enum(['pause', 'resume', 'advance', 'next', 'insert']).optional(),
+  text: z.string().trim().max(200).optional(),
+  mode: z.enum(['auto', 'semi']).optional(),
+  loop: z.boolean().optional(),
+  showAiLabel: z.boolean().optional(),
+  scene: z.enum(['studio', 'greenscreen']).optional(),
+  portraitUrl: z.string().trim().max(500).nullable().optional(),
 });
 
 const previewSchema = z.object({
@@ -205,7 +227,7 @@ export function registerRoutes(app: FastifyInstance, deps: Deps) {
       if (!deps.store.getProduct(productId)) return fail(reply, 400, 'product_required');
     }
     const persona = body.persona ? deps.store.setPersona(normalizePersona(body.persona)) : deps.store.getPersona();
-    const session = deps.store.createLiveSession({ productIds, persona });
+    const session = deps.store.createLiveSession({ productIds, persona, show: body.show });
     deps.director.start(session.id);
     return reply.code(201).send({ session });
   });
@@ -215,6 +237,37 @@ export function registerRoutes(app: FastifyInstance, deps: Deps) {
     if (!session) return fail(reply, 404, 'session_not_found');
     const product = session.currentProductId ? deps.store.getProduct(session.currentProductId) : null;
     return { session, product };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/sessions/:id/control', async (request, reply) => {
+    const existing = deps.store.getSession(request.params.id);
+    if (!existing) return fail(reply, 404, 'session_not_found');
+    if (existing.status !== 'live') return fail(reply, 409, 'session_not_live');
+    const body = parse(controlSchema, request.body, reply);
+    if (!body) return;
+    const patch: Partial<typeof existing.show> = {};
+    if (body.mode) patch.mode = body.mode;
+    if (body.loop !== undefined) patch.loop = body.loop;
+    if (body.showAiLabel !== undefined) patch.showAiLabel = body.showAiLabel;
+    if (body.scene) patch.scene = body.scene;
+    if (body.portraitUrl !== undefined) {
+      if (body.portraitUrl && !isSafeImageUrl(body.portraitUrl)) return fail(reply, 400, 'invalid_body');
+      patch.portraitUrl = body.portraitUrl || null;
+    }
+    if (body.action === 'pause') patch.paused = true;
+    if (body.action === 'resume') patch.paused = false;
+    if (body.action === 'insert' && !body.text?.trim()) return fail(reply, 400, 'invalid_body');
+    let session = existing;
+    if (Object.keys(patch).length > 0) {
+      const updated = deps.store.updateShow(existing.id, patch);
+      if (!updated) return fail(reply, 404, 'session_not_found');
+      session = updated;
+    }
+    if (body.action === 'advance') deps.director.release(existing.id, 'advance');
+    if (body.action === 'next') deps.director.release(existing.id, 'next');
+    if (body.action === 'insert' && body.text) deps.director.enqueue(existing.id, clean(body.text));
+    deps.hub.publish(existing.id, { type: 'status', session });
+    return { session };
   });
 
   app.post<{ Params: { id: string } }>('/api/sessions/:id/stop', async (request, reply) => {
@@ -425,9 +478,9 @@ export function systemPayload(deps: Deps): SystemInfo {
     tts: {
       id: deps.tts.id,
       configured: deps.config.ttsProvider,
-      degraded: deps.config.ttsProvider === 'http' && deps.tts.id !== 'http',
+      degraded: deps.config.ttsProvider !== 'mock' && deps.tts.id !== deps.config.ttsProvider,
     },
-    avatar: deps.avatar,
+    avatar: deps.avatar.presentation,
     realtime: {
       id: deps.realtime.id,
       configured: deps.config.realtimeProvider,
@@ -478,12 +531,14 @@ function toProductInput(input: z.infer<typeof productSchema>): ProductInput {
 }
 
 function normalizePersona(persona: z.infer<typeof personaSchema>): Persona {
-  return {
+  return normalizeStoredPersona({
     name: clean(persona.name),
     tone: persona.tone,
     extraNotes: clean(persona.extraNotes ?? ''),
     speechRate: persona.speechRate,
-  };
+    hostId: persona.hostId,
+    voice: persona.voice,
+  });
 }
 
 function parse<T>(schema: ZodType<T, z.ZodTypeDef, unknown>, body: unknown, reply: FastifyReply): T | undefined {
@@ -546,6 +601,12 @@ function mimeFor(name: string): string {
       return 'image/webp';
     case '.gif':
       return 'image/gif';
+    case '.wav':
+      return 'audio/wav';
+    case '.mp3':
+      return 'audio/mpeg';
+    case '.mp4':
+      return 'video/mp4';
     default:
       return 'application/octet-stream';
   }

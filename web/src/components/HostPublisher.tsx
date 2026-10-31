@@ -9,22 +9,32 @@ type Phase = 'idle' | 'publish' | 'agent' | 'failed' | 'local';
 
 export function HostPublisher({
   sessionId,
+  hostId,
   hostName,
   caption,
   productTitle,
   speaking,
   audioUrl,
   speechToken,
+  speechDurationMs,
+  portraitUrl = null,
+  scene = 'studio',
+  showAiLabel = true,
   relay,
   onComment,
 }: {
   sessionId: string;
+  hostId: string;
   hostName: string;
   caption: string;
   productTitle: string;
   speaking: boolean;
   audioUrl: string | null;
   speechToken: number;
+  speechDurationMs: number;
+  portraitUrl?: string | null;
+  scene?: 'studio' | 'greenscreen';
+  showAiLabel?: boolean;
   relay: { nonce: number; packet: RealtimeDataPacket } | null;
   onComment: (packet: RealtimeDataPacket) => void;
 }) {
@@ -36,8 +46,36 @@ export function HostPublisher({
   commentRef.current = onComment;
   const relayRef = useRef(relay);
   relayRef.current = relay;
-  const frameRef = useRef({ host: hostName, caption, product: productTitle, speaking });
-  frameRef.current = { host: hostName, caption, product: productTitle, speaking };
+  const clockRef = useRef({ token: 0, startedAt: 0 });
+  if (speechToken !== clockRef.current.token) {
+    clockRef.current = { token: speechToken, startedAt: performance.now() };
+  }
+  const frameRef = useRef({
+    hostId,
+    host: hostName,
+    caption,
+    product: productTitle,
+    speaking,
+    speechText: caption,
+    speechStartedAt: clockRef.current.startedAt,
+    speechDurationMs,
+    portraitUrl,
+    scene,
+    showAiLabel,
+  });
+  frameRef.current = {
+    hostId,
+    host: hostName,
+    caption,
+    product: productTitle,
+    speaking,
+    speechText: caption,
+    speechStartedAt: clockRef.current.startedAt,
+    speechDurationMs,
+    portraitUrl,
+    scene,
+    showAiLabel,
+  };
   const [phase, setPhase] = useState<Phase>('idle');
   const [join, setJoin] = useState<RealtimeJoin | null>(null);
 

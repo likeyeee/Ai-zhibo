@@ -61,6 +61,7 @@ export const api = {
   session: (id: string) => request<{ session: LiveSession; product: Product | null }>(`/api/sessions/${id}`),
   start: (body: unknown) => request<{ session: LiveSession }>('/api/sessions', json('POST', body)),
   stop: (id: string) => request<{ session: LiveSession }>(`/api/sessions/${id}/stop`, { method: 'POST' }),
+  control: (id: string, body: unknown) => request<{ session: LiveSession }>(`/api/sessions/${id}/control`, json('POST', body)),
   comments: (id: string) => request<{ comments: Comment[] }>(`/api/sessions/${id}/comments`),
   comment: (id: string, body: unknown) => request<{ comment: Comment }>(`/api/sessions/${id}/comments`, json('POST', body)),
   rtc: (id: string, body: { role: 'host' | 'viewer'; identity?: string; name?: string }) =>

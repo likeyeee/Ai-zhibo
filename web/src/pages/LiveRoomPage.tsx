@@ -4,7 +4,7 @@ import { formatYuan, type RealtimeDataPacket } from '@lingbo/shared';
 import type { RemoteTrack } from 'livekit-client';
 import { api } from '../api';
 import { CommentList } from '../components/CommentList';
-import { HostAvatar } from '../components/HostAvatar';
+import { HostStage } from '../components/PhotoHost';
 import { ProductCover } from '../components/ProductCover';
 import { useSystem } from '../components/Layout';
 import { explainError, useI18n } from '../i18n';
@@ -27,7 +27,6 @@ export function LiveRoomPage() {
   const [videoTrack, setVideoTrack] = useState<RemoteTrack | null>(null);
   const [remoteAudio, setRemoteAudio] = useState(false);
   const [rtcMode, setRtcMode] = useState<'local' | 'connecting' | 'livekit' | 'failed'>('local');
-  const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const rtcRef = useRef<LiveKitHandle | null>(null);
 
@@ -114,22 +113,8 @@ export function LiveRoomPage() {
   }, [sessionId]);
 
   useEffect(() => {
-    const element = videoRef.current;
-    if (!element || !videoTrack) return;
-    videoTrack.attach(element);
-    return () => {
-      videoTrack.detach(element);
-    };
-  }, [videoTrack]);
-
-  useEffect(() => {
     const speech = room.speech;
-    if (!speech || remoteAudio) return;
-    if (speech.audioUrl) {
-      const audio = new Audio(speech.audioUrl);
-      void audio.play().catch(() => undefined);
-      return () => audio.pause();
-    }
+    if (!speech || remoteAudio || speech.audioUrl || speech.avatarVideoUrl) return;
     if (!browserTts || !('speechSynthesis' in window)) return;
     const utterance = new SpeechSynthesisUtterance(speech.text);
     utterance.lang = 'zh-CN';
@@ -178,8 +163,9 @@ export function LiveRoomPage() {
 
   const session = room.session;
   const hostName = session?.persona.name ?? t('comment.host');
+  const hostId = session?.persona.hostId ?? 'lin';
   const caption = room.speech?.text || session?.currentCaption || '';
-  const videoUrl = system?.avatar.videoUrl ?? null;
+  const videoUrl = system?.avatar.id === 'video' ? system.avatar.videoUrl : null;
   const live = session?.status === 'live';
 
   return (
@@ -217,13 +203,17 @@ export function LiveRoomPage() {
           <div className={speaking ? 'stage speaking' : 'stage'}>
             <div className="spotlight" />
             <audio ref={audioRef} autoPlay />
-            {videoTrack ? (
-              <video ref={videoRef} className="avatar-video" autoPlay playsInline />
-            ) : videoUrl ? (
-              <video className="avatar-video" src={videoUrl} autoPlay muted={browserTts} loop playsInline />
-            ) : (
-              <HostAvatar name={hostName} speaking={speaking} />
-            )}
+            <HostStage
+              hostId={hostId}
+              speaking={speaking}
+              cue={room.speech}
+              remoteTrack={videoTrack}
+              loopUrl={videoUrl}
+              syncAudio={!remoteAudio && !videoTrack && !room.speech?.avatarVideoUrl}
+              portraitUrl={room.session?.show.portraitUrl ?? null}
+              scene={room.session?.show.scene ?? 'studio'}
+            />
+            {room.session?.show.showAiLabel !== false ? <p className="ai-label">{t('show.badge')}</p> : null}
             <div className="nameplate">
               <b>{hostName}</b>
               <span>{speaking ? t('speech.speaking') : t('speech.idle')}</span>

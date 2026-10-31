@@ -6,6 +6,7 @@
  *
  * 接入自己的模型时，保持 LlmProvider 的两个方法即可：
  * generateScript 返回 5–8 段口播，answerQuestion 只根据商品资料回答。
+ * 问答库可以是空的，这时用标题、价格、卖点和介绍作答。
  */
 import { z } from 'zod';
 import type { AppConfig } from '../config';
@@ -82,7 +83,7 @@ export class OpenAiLlm implements LlmProvider {
         {
           role: 'system',
           content:
-            '你是直播间里的数字主播。只用给定商品资料回答，不知道就说可以在下一段补充，不要编造。80 字以内，简体中文，口语。',
+            '你是直播间里的数字主播。只用给定商品资料回答。问答列表可能是空的，空了就根据标题、价格、卖点和介绍回答，不要说没有配置问答库。不知道就说可以在下一段补充，不要编造。80 字以内，简体中文，口语。',
         },
         {
           role: 'user',
@@ -90,8 +91,9 @@ export class OpenAiLlm implements LlmProvider {
             `主播：${input.persona.name}`,
             `语气：${input.persona.tone}`,
             `商品：${input.product.title}，价格 ${input.product.priceYuan} 元`,
+            `介绍：${input.product.description || '无'}`,
             `卖点：${input.product.sellingPoints.join('；') || '无'}`,
-            `问答：${input.product.faqs.map((item) => `${item.question} => ${item.answer}`).join('\n') || '无'}`,
+            `问答参考（可以为空）：${input.product.faqs.map((item) => `${item.question} => ${item.answer}`).join('\n') || '无'}`,
             `观众问：${input.question}`,
           ].join('\n'),
         },

@@ -1,9 +1,20 @@
+import { STUDIO_BACKGROUND, blinkAmount, hostById, idlePose, mouthBox, visemeAt, type SceneTemplate } from '@lingbo/shared';
+
 export interface BroadcastFrame {
+  hostId: string;
   host: string;
   caption: string;
   product: string;
   speaking: boolean;
+  speechText: string;
+  speechStartedAt: number;
+  speechDurationMs: number;
+  portraitUrl?: string | null;
+  scene?: SceneTemplate;
+  showAiLabel?: boolean;
 }
+
+const images = new Map<string, HTMLImageElement>();
 
 export function startBroadcast(canvas: HTMLCanvasElement, read: () => BroadcastFrame) {
   const context = canvas.getContext('2d');
@@ -11,10 +22,8 @@ export function startBroadcast(canvas: HTMLCanvasElement, read: () => BroadcastF
   canvas.width = 960;
   canvas.height = 540;
   let timer = 0;
-  let frame = 0;
   const draw = () => {
-    frame += 1;
-    paint(context, read(), frame);
+    paint(context, read(), performance.now());
     timer = window.requestAnimationFrame(draw);
   };
   draw();
@@ -28,15 +37,76 @@ export function startBroadcast(canvas: HTMLCanvasElement, read: () => BroadcastF
   };
 }
 
-function paint(context: CanvasRenderingContext2D, frame: BroadcastFrame, tick: number) {
+function paint(context: CanvasRenderingContext2D, frame: BroadcastFrame, now: number) {
   const { width, height } = context.canvas;
-  context.fillStyle = '#140f0c';
-  context.fillRect(0, 0, width, height);
-  const glow = context.createRadialGradient(width / 2, 210, 40, width / 2, 210, 320);
-  glow.addColorStop(0, 'rgba(255, 75, 56, 0.35)');
-  glow.addColorStop(1, 'rgba(255, 75, 56, 0)');
-  context.fillStyle = glow;
-  context.fillRect(0, 0, width, height);
+  if (frame.scene === 'greenscreen') {
+    context.fillStyle = '#00b140';
+    context.fillRect(0, 0, width, height);
+  } else {
+    const studio = image(STUDIO_BACKGROUND);
+    if (studio) context.drawImage(studio, 0, 0, width, height);
+    else {
+      context.fillStyle = '#241810';
+      context.fillRect(0, 0, width, height);
+    }
+  }
+
+  const host = hostById(frame.hostId);
+  const pose = idlePose(now, host.motion);
+  const portrait = image(frame.portraitUrl || host.portrait);
+  const ph = height * 1.08 * pose.scale;
+  const pw = ph * 0.75;
+  const px = width / 2 - pw / 2 + pose.x;
+  const py = height - ph + 8 + pose.y * 0.35;
+  context.save();
+  context.translate(px + pw / 2, py + ph * 0.72);
+  context.rotate((pose.rot * Math.PI) / 180);
+  context.translate(-(px + pw / 2), -(py + ph * 0.72));
+  if (portrait) context.drawImage(portrait, px, py, pw, ph);
+  else {
+    context.fillStyle = '#3a2a22';
+    context.fillRect(px, py, pw, ph);
+    context.fillStyle = '#f6efe4';
+    context.font = '28px sans-serif';
+    context.fillText(host.name, px + 24, py + 48);
+  }
+
+  const viseme = frame.speaking
+    ? visemeAt(frame.speechText || frame.caption, Math.max(0, now - frame.speechStartedAt), frame.speechDurationMs || 1)
+    : { shape: 'rest' as const, openness: 0 };
+  const blink = blinkAmount(now, host.motion * 10);
+  if (blink > 0.08) {
+    context.fillStyle = host.face.lid;
+    const ew = host.face.eyeW * pw;
+    const eh = ew * 0.62 * blink;
+    context.beginPath();
+    context.ellipse(px + host.face.eyeLeftX * pw, py + host.face.eyeY * ph, ew / 2, eh / 2, 0, 0, Math.PI * 2);
+    context.ellipse(px + host.face.eyeRightX * pw, py + host.face.eyeY * ph, ew / 2, eh / 2, 0, 0, Math.PI * 2);
+    context.fill();
+  }
+  if (frame.speaking && viseme.openness > 0.08) {
+    const box = mouthBox(host.face, viseme);
+    const cx = px + box.x * pw;
+    const cy = py + box.y * ph;
+    const gradient = context.createRadialGradient(cx, cy, 1, cx, cy, (box.w * pw) / 2);
+    gradient.addColorStop(0, 'rgba(42, 12, 16, 0.92)');
+    gradient.addColorStop(0.7, 'rgba(90, 32, 40, 0.8)');
+    gradient.addColorStop(1, 'rgba(90, 32, 40, 0)');
+    context.fillStyle = gradient;
+    context.beginPath();
+    context.ellipse(cx, cy, (box.w * pw) / 2, Math.max(3, (box.h * ph) / 2), 0, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.restore();
+
+  if (frame.showAiLabel !== false) {
+    context.fillStyle = 'rgba(12, 10, 8, 0.62)';
+    roundRect(context, width - 168, 24, 136, 28, 14);
+    context.fill();
+    context.fillStyle = '#fff8f2';
+    context.font = '15px sans-serif';
+    context.fillText('AI数字人直播', width - 156, 43);
+  }
 
   context.fillStyle = '#ff4b38';
   roundRect(context, 36, 28, frame.speaking ? 92 : 74, 28, 14);
@@ -44,38 +114,8 @@ function paint(context: CanvasRenderingContext2D, frame: BroadcastFrame, tick: n
   context.fillStyle = '#fff8f2';
   context.font = '16px sans-serif';
   context.fillText(frame.speaking ? '口播中' : '待命', 48, 47);
-
-  context.fillStyle = '#f6efe4';
-  context.font = '28px sans-serif';
-  context.fillText(frame.host || '主播', 36, 92);
-
-  const mouth = frame.speaking ? 8 + (tick % 12) : 3;
-  context.fillStyle = '#ffd8c2';
-  context.beginPath();
-  context.ellipse(width / 2, 230, 78, 90, 0, 0, Math.PI * 2);
-  context.fill();
-  context.fillStyle = '#1a120e';
-  context.beginPath();
-  context.ellipse(width / 2, 188, 84, 64, 0, Math.PI, Math.PI * 2);
-  context.fill();
-  context.fillStyle = '#241811';
-  context.beginPath();
-  context.ellipse(width / 2 - 28, 228, 7, 9, 0, 0, Math.PI * 2);
-  context.ellipse(width / 2 + 28, 228, 7, 9, 0, 0, Math.PI * 2);
-  context.fill();
-  context.fillStyle = '#7a3040';
-  context.beginPath();
-  context.ellipse(width / 2, 268, 16, mouth, 0, 0, Math.PI * 2);
-  context.fill();
-
-  context.fillStyle = '#ff4b38';
-  context.beginPath();
-  context.moveTo(width / 2 - 120, 330);
-  context.quadraticCurveTo(width / 2, 280, width / 2 + 120, 330);
-  context.lineTo(width / 2 + 150, height - 92);
-  context.lineTo(width / 2 - 150, height - 92);
-  context.closePath();
-  context.fill();
+  context.font = '26px sans-serif';
+  context.fillText(frame.host || host.name, 36, 86);
 
   context.fillStyle = 'rgba(20, 15, 12, 0.72)';
   roundRect(context, 28, height - 118, width - 56, 86, 16);
@@ -86,6 +126,16 @@ function paint(context: CanvasRenderingContext2D, frame: BroadcastFrame, tick: n
   context.fillStyle = '#f6efe4';
   context.font = '22px sans-serif';
   wrapText(context, frame.caption || '准备开口', 48, height - 50, width - 96, 28);
+}
+
+function image(src: string): HTMLImageElement | null {
+  let picture = images.get(src);
+  if (!picture) {
+    picture = new Image();
+    picture.src = src;
+    images.set(src, picture);
+  }
+  return picture.complete && picture.naturalWidth > 0 ? picture : null;
 }
 
 function roundRect(context: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {

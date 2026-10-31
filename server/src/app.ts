@@ -40,7 +40,7 @@ export async function createApp(options: CreateAppOptions = {}) {
     webOrigin: config.webOrigin,
   });
   const agents = createAgentDispatcher(config);
-  const director = new SessionDirector(store, hub, llm, tts, config, output, agents);
+  const director = new SessionDirector(store, hub, llm, tts, config, output, agents, avatar);
   const app = Fastify({ logger: options.logger ?? false, bodyLimit: 1_000_000 });
 
   const allowed = new Set([config.webOrigin, 'http://localhost:5173', 'http://127.0.0.1:5173']);

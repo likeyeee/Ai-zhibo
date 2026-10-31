@@ -3,19 +3,21 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { formatYuan, type RealtimeJoin } from '@lingbo/shared';
 import type { RemoteTrack } from 'livekit-client';
 import { api } from '../api';
-import { HostAvatar } from '../components/HostAvatar';
+import { HostStage } from '../components/PhotoHost';
 import { ProductCover } from '../components/ProductCover';
+import { useI18n } from '../i18n';
 import { applyLiveEvent, emptyRoom } from '../liveState';
 import { connectLiveKit } from '../realtime/connect';
 import { useLiveChannel } from '../useLiveChannel';
 
 export function ProgramPage() {
+  const { t } = useI18n();
   const { sessionId = '' } = useParams();
   const [params] = useSearchParams();
   const [room, setRoom] = useState(emptyRoom);
   const [speaking, setSpeaking] = useState(false);
   const [videoTrack, setVideoTrack] = useState<RemoteTrack | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [loopUrl, setLoopUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useLiveChannel(sessionId || null, (event) => setRoom((state) => applyLiveEvent(state, event)));
@@ -46,6 +48,13 @@ export function ProgramPage() {
     const timer = window.setTimeout(() => setSpeaking(false), room.speech.durationMs);
     return () => window.clearTimeout(timer);
   }, [room.speech]);
+
+  useEffect(() => {
+    api
+      .system()
+      .then((system) => setLoopUrl(system.avatar.videoUrl))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     console.log('START_RECORDING');
@@ -84,25 +93,31 @@ export function ProgramPage() {
     };
   }, [params]);
 
-  useEffect(() => {
-    const element = videoRef.current;
-    if (!element || !videoTrack) return;
-    videoTrack.attach(element);
-    return () => {
-      videoTrack.detach(element);
-    };
-  }, [videoTrack]);
-
   const session = room.session;
   const product = room.product;
   const caption = room.speech?.text || session?.currentCaption || '';
   const hostName = session?.persona.name || '小林';
+  const hostId = session?.persona.hostId || 'lin';
+  const clip = room.speech?.avatarVideoUrl || null;
+  const showAiLabel = session?.show.showAiLabel !== false;
+  const scene = session?.show.scene ?? 'studio';
+  const portraitUrl = session?.show.portraitUrl ?? null;
 
   return (
     <div className="program-root">
       <div className="program-frame">
         <div className="program-stage">
-          {videoTrack ? <video ref={videoRef} autoPlay playsInline muted={false} /> : <HostAvatar name={hostName} speaking={speaking} />}
+          <HostStage
+            hostId={hostId}
+            speaking={speaking}
+            cue={room.speech}
+            remoteTrack={videoTrack}
+            loopUrl={loopUrl}
+            syncAudio={!params.get('url') && !clip && !videoTrack}
+            portraitUrl={portraitUrl}
+            scene={scene}
+          />
+          {showAiLabel ? <p className="ai-label">{t('show.badge')}</p> : null}
           <audio ref={audioRef} autoPlay />
         </div>
         <div className="program-lower">

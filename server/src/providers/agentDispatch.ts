@@ -9,7 +9,7 @@ export interface AgentDispatchApi {
 }
 
 export interface AgentDispatcher {
-  dispatchHost(sessionId: string): Promise<void>;
+  dispatchHost(sessionId: string, extra?: Record<string, unknown>): Promise<void>;
   cancelHost(sessionId: string): Promise<void>;
 }
 
@@ -46,10 +46,14 @@ class ExplicitDispatch implements AgentDispatcher {
     private readonly agentName: string,
   ) {}
 
-  async dispatchHost(sessionId: string) {
+  async dispatchHost(sessionId: string, extra: Record<string, unknown> = {}) {
     const room = liveKitRoomName(sessionId);
     try {
-      const dispatch = await this.api.createDispatch(room, this.agentName, JSON.stringify({ sessionId, topic: 'lingbo' }));
+      const dispatch = await this.api.createDispatch(
+        room,
+        this.agentName,
+        JSON.stringify({ sessionId, topic: 'lingbo', ...extra }),
+      );
       if (dispatch.id) this.ids.set(sessionId, dispatch.id);
     } catch (error) {
       console.error('LiveKit Agent 调度失败，直播继续', error instanceof Error ? error.message : 'dispatch_failed');

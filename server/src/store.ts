@@ -2,12 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   DEFAULT_PERSONA,
+  normalizeShow,
+  normalizeStoredPersona,
   emptyStats,
   type Comment,
   type CommentReply,
   type CommentSource,
   type LiveSession,
   type Persona,
+  type ShowControl,
   type PlatformId,
   type Product,
   type Script,
@@ -134,7 +137,7 @@ export class JsonStore {
   }
 
   setPersona(persona: Persona): Persona {
-    this.data.persona = structuredClone(persona);
+    this.data.persona = normalizeStoredPersona(persona);
     this.save();
     return this.getPersona();
   }
@@ -189,7 +192,7 @@ export class JsonStore {
     const script: Script = {
       id: crypto.randomUUID(),
       productId: input.productId,
-      persona: structuredClone(input.persona),
+      persona: normalizeStoredPersona(input.persona),
       segments: input.segments,
       provider: input.provider,
       createdAt: new Date().toISOString(),
@@ -218,14 +221,15 @@ export class JsonStore {
     return session ? structuredClone(session) : null;
   }
 
-  createLiveSession(input: { productIds: string[]; persona: Persona }): LiveSession {
+  createLiveSession(input: { productIds: string[]; persona: Persona; show?: Partial<ShowControl> }): LiveSession {
     const now = new Date().toISOString();
     const session: LiveSession = {
       id: crypto.randomUUID(),
       status: 'live',
       productIds: [...input.productIds],
       currentProductId: null,
-      persona: structuredClone(input.persona),
+      persona: normalizeStoredPersona(input.persona),
+      show: normalizeShow(input.show),
       currentCaption: '',
       startedAt: now,
       endedAt: null,
@@ -254,6 +258,12 @@ export class JsonStore {
   setCaption(id: string, caption: string): LiveSession | null {
     return this.patchSession(id, (session) => {
       session.currentCaption = caption;
+    });
+  }
+
+  updateShow(id: string, patch: Partial<ShowControl>): LiveSession | null {
+    return this.patchSession(id, (session) => {
+      session.show = normalizeShow({ ...session.show, ...patch });
     });
   }
 
@@ -339,10 +349,14 @@ export class JsonStore {
     if (!fs.existsSync(this.file)) return emptyDb();
     const parsed = JSON.parse(fs.readFileSync(this.file, 'utf8')) as Database;
     if (!parsed || parsed.version !== 1) return emptyDb();
-    parsed.persona = { ...DEFAULT_PERSONA, ...parsed.persona };
+    parsed.persona = normalizeStoredPersona(parsed.persona);
     parsed.products ??= [];
     parsed.scripts ??= [];
-    parsed.sessions ??= [];
+    parsed.sessions = (parsed.sessions ?? []).map((session) => ({
+      ...session,
+      persona: normalizeStoredPersona(session.persona),
+      show: normalizeShow(session.show),
+    }));
     parsed.comments = (parsed.comments ?? []).map((comment) => ({ ...comment, clientId: comment.clientId ?? null }));
     parsed.destinations ??= [];
     return parsed;

@@ -1,3 +1,10 @@
+import { coerceHostId, hostById, type HostId } from './hosts';
+
+export { HOST_IDS, HOSTS, STUDIO_BACKGROUND, coerceHostId, hostById } from './hosts';
+export type { HostFace, HostId, HostProfile } from './hosts';
+export { blendOpenness, blinkAmount, idlePose, mouthBox, visemeAt } from './stage';
+export type { IdlePose, MouthBox, VisemeFrame, VisemeShape } from './stage';
+
 export const TONES = ['enthusiastic', 'professional', 'gentle', 'humorous'] as const;
 
 export type Tone = (typeof TONES)[number];
@@ -8,9 +15,9 @@ export type ScriptKind = 'opening' | 'selling_point' | 'price' | 'faq' | 'closin
 
 export type LlmProviderId = 'mock' | 'openai';
 
-export type TtsProviderId = 'mock' | 'http';
+export type TtsProviderId = 'mock' | 'http' | 'cosyvoice' | 'gpt-sovits' | 'f5';
 
-export type AvatarProviderId = 'local' | 'video';
+export type AvatarProviderId = 'local' | 'video' | 'http' | 'livekit' | 'heygem' | 'musetalk';
 
 export type RealtimeProviderId = 'local' | 'livekit';
 
@@ -84,6 +91,8 @@ export interface Persona {
   tone: Tone;
   extraNotes: string;
   speechRate: number;
+  hostId: HostId;
+  voice: string;
 }
 
 export const DEFAULT_PERSONA: Persona = {
@@ -91,7 +100,39 @@ export const DEFAULT_PERSONA: Persona = {
   tone: 'enthusiastic',
   extraNotes: '',
   speechRate: 1,
+  hostId: 'lin',
+  voice: 'warm-female',
 };
+
+export function normalizeStoredPersona(
+  input:
+    | {
+        name?: string;
+        tone?: string;
+        extraNotes?: string;
+        speechRate?: number;
+        hostId?: string;
+        voice?: string;
+      }
+    | null
+    | undefined,
+): Persona {
+  const host = hostById(input?.hostId);
+  const hostId = coerceHostId(input?.hostId);
+  const tone = (TONES as readonly string[]).includes(input?.tone ?? '') ? (input?.tone as Tone) : host.tone;
+  const speechRate =
+    typeof input?.speechRate === 'number' && input.speechRate >= 0.6 && input.speechRate <= 1.6
+      ? input.speechRate
+      : host.speechRate;
+  return {
+    name: input?.name?.trim() || host.name,
+    tone,
+    extraNotes: typeof input?.extraNotes === 'string' ? input.extraNotes : '',
+    speechRate,
+    hostId,
+    voice: input?.voice?.trim() || host.voice,
+  };
+}
 
 export interface ScriptSegment {
   kind: ScriptKind;
@@ -152,12 +193,46 @@ export interface SessionStats {
   demoAudience: number;
 }
 
+export type DirectorMode = 'auto' | 'semi';
+
+export type SceneTemplate = 'studio' | 'greenscreen';
+
+export interface ShowControl {
+  mode: DirectorMode;
+  paused: boolean;
+  loop: boolean;
+  showAiLabel: boolean;
+  scene: SceneTemplate;
+  portraitUrl: string | null;
+}
+
+export const DEFAULT_SHOW: ShowControl = {
+  mode: 'auto',
+  paused: false,
+  loop: true,
+  showAiLabel: true,
+  scene: 'studio',
+  portraitUrl: null,
+};
+
+export function normalizeShow(input?: Partial<ShowControl> | null): ShowControl {
+  return {
+    mode: input?.mode === 'semi' ? 'semi' : 'auto',
+    paused: input?.paused === true,
+    loop: input?.loop !== false,
+    showAiLabel: input?.showAiLabel !== false,
+    scene: input?.scene === 'greenscreen' ? 'greenscreen' : 'studio',
+    portraitUrl: typeof input?.portraitUrl === 'string' && input.portraitUrl.trim() ? input.portraitUrl.trim() : null,
+  };
+}
+
 export interface LiveSession {
   id: string;
   status: SessionStatus;
   productIds: string[];
   currentProductId: string | null;
   persona: Persona;
+  show: ShowControl;
   currentCaption: string;
   startedAt: string;
   endedAt: string | null;
@@ -168,7 +243,7 @@ export interface LiveSession {
 export interface SystemInfo {
   llm: { id: LlmProviderId; configured: LlmProviderId; degraded: boolean };
   tts: { id: TtsProviderId; configured: TtsProviderId; degraded: boolean };
-  avatar: { id: AvatarProviderId; videoUrl: string | null };
+  avatar: { id: AvatarProviderId; configured: AvatarProviderId; degraded: boolean; videoUrl: string | null };
   realtime: {
     id: RealtimeProviderId;
     configured: RealtimeProviderId;
@@ -197,6 +272,7 @@ export type LiveEvent =
       text: string;
       durationMs: number;
       audioUrl: string | null;
+      avatarVideoUrl: string | null;
       productId: string;
     }
   | { type: 'product'; product: Product }

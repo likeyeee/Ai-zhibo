@@ -78,7 +78,7 @@ export function Layout() {
                   {t('system.tts')} · {providerName(system.tts.id, t)}
                 </span>
                 <span>
-                  {t('system.avatar')} · {providerName(system.avatar.id, t)}
+                  {t('system.avatar')} · {avatarLabel(system.avatar.id, t)}
                 </span>
                 <span>
                   {t('system.realtime')} · {system.realtime.id === 'livekit' ? t('system.livekit') : t('system.localRoom')}
@@ -87,7 +87,8 @@ export function Layout() {
                   {t('system.output')} · {outputName(system.output.id, t)}
                 </span>
                 <span>{system.simulateViewers ? t('system.simulateOn') : t('system.simulateOff')}</span>
-                {system.llm.degraded || system.tts.degraded || system.realtime.degraded || system.output.degraded ? (
+                {system.avatar.configured === 'heygem' ? <span>{t('system.duixCredit')}</span> : null}
+                {system.llm.degraded || system.tts.degraded || system.avatar.degraded || system.realtime.degraded || system.output.degraded ? (
                   <span>{t('system.degraded')}</span>
                 ) : null}
               </>
@@ -99,10 +100,22 @@ export function Layout() {
   );
 }
 
+function avatarLabel(id: string, t: ReturnType<typeof useI18n>['t']) {
+  if (id === 'heygem') return t('system.avatarHeygem');
+  if (id === 'musetalk') return t('system.avatarMusetalk');
+  if (id === 'http') return t('system.avatarHttp');
+  if (id === 'livekit') return t('system.avatarLivekit');
+  if (id === 'video') return t('system.video');
+  return t('system.local');
+}
+
 function providerName(id: string, t: ReturnType<typeof useI18n>['t']) {
   if (id === 'mock') return t('system.mock');
   if (id === 'openai') return t('system.openai');
   if (id === 'http') return t('system.http');
+  if (id === 'cosyvoice') return t('system.cosyvoice');
+  if (id === 'gpt-sovits') return t('system.gptSovits');
+  if (id === 'f5') return t('system.f5');
   if (id === 'video') return t('system.video');
   return t('system.local');
 }

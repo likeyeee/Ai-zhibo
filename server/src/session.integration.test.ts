@@ -115,7 +115,12 @@ describe('livestream flow', () => {
     });
     apps.push({ close: () => bundle.app.close(), dataDir: bundle.dataDir });
     const system = await bundle.app.inject({ method: 'GET', url: '/api/system' });
-    expect(system.json().avatar).toEqual({ id: 'video', videoUrl: 'https://cdn.example/host.mp4' });
+    expect(system.json().avatar).toEqual({
+      id: 'video',
+      configured: 'video',
+      degraded: false,
+      videoUrl: 'https://cdn.example/host.mp4',
+    });
     expect(system.json().llm.id).toBe('mock');
 
     const boundary = '----lingboBoundary';
@@ -172,5 +177,64 @@ describe('livestream flow', () => {
     expect(first.json().created).toBe(3);
     const second = await bundle.app.inject({ method: 'POST', url: '/api/products/seed' });
     expect(second.json().created).toBe(0);
+  });
+
+  it('holds an inserted line until the show is resumed', async () => {
+    const bundle = await makeApp();
+    apps.push({ close: () => bundle.app.close(), dataDir: bundle.dataDir });
+    const created = await bundle.app.inject({
+      method: 'POST',
+      url: '/api/products',
+      payload: { title: '红茶', priceYuan: 36, imageUrl: null, sellingPoints: ['清香'], faqs: [], description: '桐木关' },
+    });
+    const spoken: string[] = [];
+    bundle.hub.tap((_sessionId, event) => {
+      if (event.type === 'speech') spoken.push(event.text);
+    });
+    const line = '请把这句插播念出来甲乙丙';
+    const started = await bundle.app.inject({
+      method: 'POST',
+      url: '/api/sessions',
+      payload: { productIds: [created.json().product.id], show: { paused: true } },
+    });
+    const sessionId = started.json().session.id as string;
+    expect(started.json().session.show.paused).toBe(true);
+    const inserted = await bundle.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${sessionId}/control`,
+      payload: { action: 'insert', text: line },
+    });
+    expect(inserted.statusCode).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(spoken).not.toContain(line);
+    const resumed = await bundle.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${sessionId}/control`,
+      payload: { action: 'resume' },
+    });
+    expect(resumed.json().session.show.paused).toBe(false);
+    await vi.waitFor(() => {
+      expect(spoken).toContain(line);
+    });
+  });
+
+  it('ends after the current product when looping is off', async () => {
+    const { app, productId } = await setup();
+    const started = await app.inject({
+      method: 'POST',
+      url: '/api/sessions',
+      payload: { productIds: [productId], show: { paused: true, loop: false } },
+    });
+    const sessionId = started.json().session.id as string;
+    expect(started.json().session.show.loop).toBe(false);
+    await app.inject({
+      method: 'POST',
+      url: `/api/sessions/${sessionId}/control`,
+      payload: { action: 'resume' },
+    });
+    await vi.waitFor(async () => {
+      const current = await app.inject({ method: 'GET', url: `/api/sessions/${sessionId}` });
+      expect(current.json().session.status).toBe('ended');
+    });
   });
 });

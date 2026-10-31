@@ -5,6 +5,7 @@ export interface SpeechCue {
   text: string;
   durationMs: number;
   audioUrl: string | null;
+  avatarVideoUrl: string | null;
   purpose: SpeechPurpose;
 }
 
@@ -39,6 +40,7 @@ export function applyLiveEvent(state: RoomState, event: LiveEvent): RoomState {
           text: event.text,
           durationMs: event.durationMs,
           audioUrl: event.audioUrl,
+          avatarVideoUrl: event.avatarVideoUrl,
           purpose: event.purpose,
         },
         session: state.session ? { ...state.session, currentCaption: event.text } : state.session,

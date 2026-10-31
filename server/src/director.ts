@@ -2,6 +2,7 @@ import { formatYuan, type Persona, type Product, type SpeechPurpose } from '@lin
 import type { AppConfig } from './config';
 import type { LiveHub } from './liveHub';
 import type { AgentDispatcher } from './providers/agentDispatch';
+import type { AvatarProvider } from './providers/avatar';
 import type { OutputManager } from './providers/output/manager';
 import type { LlmProvider, TtsProvider } from './providers/types';
 import { ViewerSimulator } from './simulator';
@@ -12,6 +13,9 @@ export class SessionDirector {
   private readonly jobs = new Map<string, AbortController>();
   private readonly running = new Set<Promise<void>>();
   private readonly cursors = new Map<string, number>();
+  private readonly inserts = new Map<string, string[]>();
+  private readonly advances = new Set<string>();
+  private readonly skipProducts = new Set<string>();
   private readonly simulator: ViewerSimulator;
 
   constructor(
@@ -22,6 +26,7 @@ export class SessionDirector {
     private readonly config: AppConfig,
     private readonly output: OutputManager,
     private readonly agents: AgentDispatcher,
+    private readonly avatar: AvatarProvider,
   ) {
     this.simulator = new ViewerSimulator(store, hub, config);
   }
@@ -32,16 +37,37 @@ export class SessionDirector {
     this.jobs.set(sessionId, controller);
     if (this.config.simulateViewers) this.simulator.start(sessionId);
     void this.output.attach(sessionId);
-    void this.agents.dispatchHost(sessionId);
+    const persona = this.store.getSession(sessionId)?.persona;
+    void this.agents.dispatchHost(sessionId, {
+      hostId: persona?.hostId ?? 'lin',
+      voice: persona?.voice ?? '',
+      avatar: this.config.avatarProvider,
+    });
     const job = this.run(sessionId, controller.signal).finally(() => {
       this.jobs.delete(sessionId);
       this.simulator.stop(sessionId);
       this.cursors.delete(sessionId);
+      this.inserts.delete(sessionId);
+      this.advances.delete(sessionId);
+      this.skipProducts.delete(sessionId);
       this.running.delete(job);
       void this.output.detach(sessionId);
       void this.agents.cancelHost(sessionId);
     });
     this.running.add(job);
+  }
+
+  enqueue(sessionId: string, text: string) {
+    const line = text.trim();
+    if (!line) return;
+    const queue = this.inserts.get(sessionId) ?? [];
+    queue.push(line);
+    this.inserts.set(sessionId, queue);
+  }
+
+  release(sessionId: string, kind: 'advance' | 'next') {
+    if (kind === 'next') this.skipProducts.add(sessionId);
+    this.advances.add(sessionId);
   }
 
   async stop(sessionId: string) {
@@ -82,7 +108,7 @@ export class SessionDirector {
   private async step(sessionId: string, signal: AbortSignal): Promise<boolean> {
     const session = this.store.getSession(sessionId);
     if (!session || session.status !== 'live' || signal.aborted) return false;
-    const product = this.pickProduct(session.productIds, sessionId);
+    const product = this.pickProduct(session.productIds, sessionId, session.show.loop);
     if (!product) {
       const ended = this.store.endSession(sessionId);
       if (ended) this.hub.publish(sessionId, { type: 'status', session: ended });
@@ -109,21 +135,72 @@ export class SessionDirector {
       provider: generated.provider,
     });
     this.hub.publish(sessionId, { type: 'script', script });
+    this.avatar.prepare?.({ texts: script.segments.map((segment) => segment.text), persona });
 
+    let first = true;
     for (const segment of script.segments) {
       if (signal.aborted) return false;
+      const open = await this.waitGate(sessionId, signal, !first);
+      if (!open) return false;
+      first = false;
+      if (this.takeSkip(sessionId)) break;
       await this.answerOne(sessionId, product, persona, signal);
       if (signal.aborted) return false;
+      await this.drainInserts(sessionId, product.id, persona, signal);
+      if (signal.aborted) return false;
+      if (this.takeSkip(sessionId)) break;
       await this.speak(sessionId, segment.text, product.id, 'script', persona, signal);
     }
     return !signal.aborted;
   }
 
-  private pickProduct(productIds: string[], sessionId: string): Product | null {
+  private async waitGate(sessionId: string, signal: AbortSignal, holdForSemi: boolean): Promise<boolean> {
+    while (!signal.aborted) {
+      const session = this.store.getSession(sessionId);
+      if (!session || session.status !== 'live') return false;
+      if (this.skipProducts.has(sessionId)) return true;
+      if (session.show.paused) {
+        await interruptibleSleep(200, signal);
+        continue;
+      }
+      if (holdForSemi && session.show.mode === 'semi' && !this.advances.has(sessionId)) {
+        await interruptibleSleep(200, signal);
+        continue;
+      }
+      this.advances.delete(sessionId);
+      return true;
+    }
+    return false;
+  }
+
+  private takeSkip(sessionId: string): boolean {
+    const skip = this.skipProducts.delete(sessionId);
+    if (skip) this.advances.delete(sessionId);
+    return skip;
+  }
+
+  private async drainInserts(sessionId: string, productId: string, persona: Persona, signal: AbortSignal) {
+    while (!signal.aborted) {
+      const session = this.store.getSession(sessionId);
+      if (!session || session.status !== 'live') return;
+      if (this.skipProducts.has(sessionId)) return;
+      if (session.show.paused) {
+        await interruptibleSleep(200, signal);
+        continue;
+      }
+      const line = this.inserts.get(sessionId)?.shift();
+      if (!line) return;
+      await this.speak(sessionId, line, productId, 'script', persona, signal);
+    }
+  }
+
+  private pickProduct(productIds: string[], sessionId: string, loop: boolean): Product | null {
     if (productIds.length === 0) return null;
     const start = this.cursors.get(sessionId) ?? 0;
-    for (let offset = 0; offset < productIds.length; offset += 1) {
-      const index = (start + offset) % productIds.length;
+    const span = loop ? productIds.length : productIds.length - start;
+    if (span <= 0) return null;
+    for (let offset = 0; offset < span; offset += 1) {
+      const index = loop ? (start + offset) % productIds.length : start + offset;
       const product = this.store.getProduct(productIds[index] ?? '');
       if (product) {
         this.cursors.set(sessionId, index + 1);
@@ -155,6 +232,16 @@ export class SessionDirector {
     signal: AbortSignal,
   ) {
     const clip = await this.tts.synthesize(text, persona);
+    const live = this.store.getSession(sessionId);
+    const avatarVideoUrl = signal.aborted
+      ? null
+      : await this.avatar.clipFor({
+          text,
+          persona,
+          purpose,
+          audioUrl: clip.audioUrl,
+          portraitUrl: live?.show.portraitUrl ?? null,
+        });
     if (signal.aborted) return;
     const session = this.store.setCaption(sessionId, text);
     const product = this.store.getProduct(productId);
@@ -171,6 +258,7 @@ export class SessionDirector {
       text,
       durationMs: clip.durationMs,
       audioUrl: clip.audioUrl,
+      avatarVideoUrl,
       productId,
     });
     if (counted) this.hub.publish(sessionId, { type: 'stats', stats: counted.stats });

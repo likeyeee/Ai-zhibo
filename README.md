@@ -19,11 +19,11 @@
 
 - 商品：名称、价格、图片、卖点、常见问题。可上传图片，也可以载入三件示例。
 - 话术：按商品资料和语气生成口播。默认是本地模板；配置了兼容 OpenAI 的接口就改走模型，失败会退回模板。
-- 数字人：内置矢量主播，嘴型跟着当前这句话动。可改成循环视频。
+- 数字人：四位可选主播（小林、周衡、阿燃、陈姐），各有名字、声音、语气和肖像。本地用演播室背景、眨眼、待机动作，以及跟着口播走的口型。也可以上传一张正脸照片。HeyGem 和 MuseTalk 用来接真人短视频克隆（只驱动嘴部），LiveKit 远程形象和循环视频仍然可用。
 - 预览间：看主播、商品卡和公屏。评论会进入队列，主播在下一小段之前回答。
 - 平台推流：每个平台一条目的地（服务器地址 + 串流密钥）。开播后合成数字人画面和商品字幕，用 FFmpeg 或 LiveKit Egress 推 RTMP/RTMPS。控制台能看连接、推流中、重连和失败。
 - 平台评论：只收你自己服务器上的回调，不抓平台的私有接口。
-- 控制台：选轮播顺序、预览话术、开播和结束、看评论和简单统计。
+- 控制台：选轮播顺序、预览话术、开播和结束、看评论和简单统计。导播台可以暂停、插播一句、放下一句、换商品，并在自动和半自动之间切换。
 
 ## 环境
 
@@ -72,10 +72,19 @@ npm start
 | `DATA_DIR` | 数据目录，默认 `server/data` |
 | `LLM_PROVIDER` | `mock` 或 `openai`。后者任何兼容 Chat Completions 的地址都可以 |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 模型接口 |
-| `TTS_PROVIDER` | `mock` 或 `http` |
-| `TTS_HTTP_URL` / `TTS_API_KEY` | 语音服务 |
-| `AVATAR_PROVIDER` | `local` 或 `video` |
-| `AVATAR_VIDEO_URL` | 循环视频地址 |
+| `TTS_PROVIDER` | `mock`、`http`、`cosyvoice`、`gpt-sovits` 或 `f5` |
+| `TTS_HTTP_URL` / `TTS_API_KEY` | `http` 语音服务 |
+| `CLONE_REF_AUDIO` / `CLONE_REF_TEXT` | 克隆音色的参考音频路径和对应文本。三个克隆引擎都要 |
+| `COSYVOICE_URL` / `GPT_SOVITS_URL` / `F5_TTS_URL` | 对应引擎的地址。没配齐时退回本地时长 |
+| `AVATAR_PROVIDER` | `local`、`http`、`livekit`、`video`、`heygem` 或 `musetalk` |
+| `AVATAR_VIDEO_URL` | `video` 时的循环视频地址 |
+| `AVATAR_HTTP_URL` / `AVATAR_API_KEY` | `http` 时每句口播换一段视频的地址和密钥 |
+| `MUSETALK_URL` | `musetalk` 时的口型服务。请求里 `mouthOnly` 为 true，大约 8 秒没返回就改用本地肖像 |
+| `HEYGEM_VIDEO_URL` / `HEYGEM_TTS_URL` | `heygem` 时本机成片服务和语音服务，默认 `8383` 和 `18180` |
+| `HEYGEM_DATA_DIR` | 和 HeyGem 视频容器共用的成品目录。官方客户端在 Linux 上是 `~/duix_avatar_data/face2face/temp` |
+| `HEYGEM_VIDEO_PATH` / `HEYGEM_HOST_VIDEOS` | 驱动视频在容器里的路径。后者按主播分开，如 `lin=lin.mp4,heng=heng.mp4` |
+| `HEYGEM_REFERENCE_AUDIO` / `HEYGEM_REFERENCE_TEXT` | fish-speech 克隆音色用的参考音频和对应文本 |
+| `HEYGEM_SCRIPT_WAIT_MS` / `HEYGEM_REPLY_WAIT_MS` | 口播和回复各等多久。默认都是 `0`：不等成片，先用本地肖像 |
 | `SIMULATE_VIEWERS` | 开播后是否自动丢演示评论 |
 | `SIMULATE_INTERVAL_MS` | 演示评论间隔 |
 | `SPEECH_PAUSE_SCALE` | 口播停顿倍率，`1` 为正常 |
@@ -101,7 +110,7 @@ LiveKit 是开源 SFU。选它做底座，是因为数字人直播要的几件�
 - **Egress** 用无头 Chrome 打开本仓库的播出页 `/program/<场次 id>`，把数字人、字幕和商品卡合成一路画面，再按 RTMP/RTMPS 推到一个或多个平台。这是对外播出的主路径。
 - **Ingress** 把外部编码器的 RTMP 拉进同一个房间，身份是 `avatar-source`。数字人供应商如果只会出一路 RTMP，就从这里进房间，再由 Egress 推出去。
 
-没有 LiveKit 时，`REALTIME_PROVIDER=local`，预览间用内置矢量主播和 WebSocket。`OUTPUT_PROVIDER=mock` 时推流只记状态，不连外网。`OUTPUT_PROVIDER=ffmpeg` 时不需要 LiveKit，本机用 FFmpeg 把商品名、价格和当前口播画成 1280×720 再推 RTMP，断线会按 1 秒、2 秒、4 秒退避重连，最长 15 秒。
+没有 LiveKit 时，`REALTIME_PROVIDER=local`，预览间用本地肖像主播和 WebSocket。`OUTPUT_PROVIDER=mock` 时推流只记状态，不连外网。`OUTPUT_PROVIDER=ffmpeg` 时不需要 LiveKit，本机用 FFmpeg 把商品名、价格和当前口播画成 1280×720 再推 RTMP，断线会按 1 秒、2 秒、4 秒退避重连，最长 15 秒。
 
 ```text
 导播循环 ──口播/评论──► data channel topic lingbo
@@ -274,7 +283,121 @@ MediaMTX 监听 `1935`。在控制台点「填入本地测试地址」，或自�
 
 平台如果不能自定义请求头，用反向代理把令牌写进头，或把令牌放进 JSON 的 `ingestToken`。灵播目前不校验各平台自己的签名；签名校验放在你那一层转发里。
 
-没配 LiveKit 时，`POST /api/sessions/:id/rtc` 返回 `provider: "local"`，预览间继续用内置主播。
+没配 LiveKit 时，`POST /api/sessions/:id/rtc` 返回 `provider: "local"`，预览间继续用本地肖像主播。
+
+## 主播形象
+
+控制台开播前选一位主播。选中后，名字、声音预设、语气和语速一起换上，补充要求不动。这一场开播后主播锁定，下一场再换。
+
+| 主播 | 声音预设 | 语气 | 语速 | 画面 |
+| --- | --- | --- | --- | --- |
+| 小林 | `warm-female` | 热情讲解 | 自然 | 年轻女主播，珊瑚衬衫 |
+| 周衡 | `calm-male` | 专业说明 | 舒缓 | 男主播，深色西装 |
+| 阿燃 | `bright-female` | 热情讲解 | 轻快 | 马尾、锈红外套，节奏更快 |
+| 陈姐 | `mature-female` | 温和介绍 | 舒缓 | 成熟女主播，米色毛衣 |
+
+肖像和演播室背景在 `web/public/hosts/`。它们是为本仓库生成的原创合成图像，不是真人照片，也不对应任何公众人物，不来自图库。说明写在 `web/public/hosts/PROVENANCE.md`。可以随代码一起使用和修改。不要把这些脸说成某位真人。
+
+本地渲染（`AVATAR_PROVIDER=local`，也是其它模式失败后的退路）：
+
+- 上半身肖像叠在演播室背景上，左右做了渐隐。
+- 待机时有轻微的左右晃动、呼吸和点头。说话时饱和度略高一点。
+- 眨眼按时间周期盖一层肤色。
+- 口型按这句话的时长把每个字映射成开合。标点把嘴合上。张开程度大约在 0.15 到 0.85。
+- 如果这句口播带了 `audioUrl`，页面会播放它，并用音量再修正口型。
+- 播出页 `/program/<场次>` 上有字幕和商品卡。LiveKit Egress 打开的就是这一页。控制台在 `LIVEKIT_HOST_PUBLISHER=browser` 时，推到房间里的画面也是同一套肖像和口型。
+
+这还不是音素级唇形，也不是三维数字人。`TTS_PROVIDER=mock` 时没有音频字节，口型只跟着字的时间轴走。
+
+### 什么是真的，什么仍是本地模拟
+
+| 部分 | 现状 |
+| --- | --- |
+| 四位主播的肖像、名字、声音预设、语气 | 真的，开播就会写进这场的人设 |
+| 演播室背景、眨眼、待机、按文本的口型、商品和字幕叠层 | 真的画面，跑在浏览器里 |
+| 音量修正口型 | 只有这句口播真的有音频地址时才会用。模拟语音没有音频，所以不会走到这里 |
+| `AVATAR_PROVIDER=http` | 真的 HTTP 调用。每句口播 `POST` 到 `AVATAR_HTTP_URL`。成功就播放返回的视频；失败则这句退回本地肖像，系统栏标成降级 |
+| `AVATAR_PROVIDER=livekit` | 配置是真的：LiveKit 凭证齐全时，播出页和预览间优先播房间里的远程视频轨。Tavus、Hedra、Simli、bitHuman 或自建唇形模型要作为 Agents 插件或 Ingress 进这个房间，本仓库不打包这些 SDK |
+| `AVATAR_PROVIDER=heygem` | 调用是真的，成片本身要另有一台带 NVIDIA 显卡的 HeyGem。口播会预先提交；默认不等结果。回复走本地肖像，除非这句成片已经好了。本机没有显卡和 Docker，这里没有实际跑过 HeyGem |
+| `AVATAR_PROVIDER=video` | 真的循环播放 `AVATAR_VIDEO_URL`。没填地址则退回本地肖像 |
+| 浏览器朗读 | 仍只在预览这台电脑上出声，不进 LiveKit 音轨，也不进推流 |
+| FFmpeg 推流 | 仍是商品名、价格和口播字幕的合成画面，不含肖像。要把肖像主播推到平台，用 LiveKit Egress 打开播出页 |
+
+`AVATAR_PROVIDER=http` 的请求体：
+
+```json
+{ "text": "家人们好", "voice": "warm-female", "hostId": "lin", "language": "zh-CN" }
+```
+
+有 `AVATAR_API_KEY` 时带 `Authorization: Bearer`。响应需要：
+
+```json
+{ "videoUrl": "https://cdn.example.com/line.mp4" }
+```
+
+`videoUrl` 必须是 http 或 https。导播把这个地址放进这场的 `speech` 事件，播出页和预览间播这一句，播完回到肖像。
+
+`AVATAR_PROVIDER=livekit` 且 `REALTIME_PROVIDER=livekit`、三项 LiveKit 凭证都在时，系统信息里的形象是 `livekit`。Agent 调度的 metadata 里带 `hostId`、`voice` 和 `avatar`。`agent/src/worker.ts` 里换成 [LiveKit Agents 的形象插件](https://github.com/livekit/agents)（Tavus、Hedra、Simli、bitHuman 等），或让供应商把 RTMP 送进 Ingress（参与者 `avatar-source`）。房间里一有视频轨，播出页就用它，不再画本地肖像。凭证不全时自动退回本地肖像，并标成降级。
+
+## HeyGem 适不适合接进来
+
+看过的是 [duixcom/Duix.Heygem](https://github.com/duixcom/Duix.Heygem) 主分支（仓库里的英文名是 Duix.Avatar，发布方是 Duix / DUIX.COM，也就是硅基智能这一套）。结论：可以当作**离线口播成片**用，不适合当作直播间的实时嘴。已经按这个结论接上，默认不启用。
+
+### 它实际是什么
+
+仓库里的开源部分是 Electron 客户端和它调用的 HTTP 约定。唇形和声音跑在三只 Docker 镜像里，不在 git 里：
+
+| 服务 | 镜像 | 本机端口 | 作用 |
+| --- | --- | --- | --- |
+| 声音 | `guiji2025/fish-speech-ziming` | `18180` | 用一段参考音频克隆音色，`POST /v1/invoke`。`streaming` 在官方客户端里写死为 `false`，返回的是整段 wav |
+| 识别 | `guiji2025/fun-asr` | `10095` | 训练音色时把参考音频转成文本。直播这一步用不上 |
+| 口型成片 | `guiji2025/duix.avatar`（旧 compose 里叫 `guiji2025/heygem.ai`） | `8383` | `POST /easy/submit` 提交，`GET /easy/query?code=` 轮询。`data.status` 为 `2` 才算完成，成品是数据目录里的 mp4 路径，不是一条公网视频地址 |
+
+官方 README 第 7 节写的是：这个项目做数字人克隆和**非实时**视频合成；要实时交互，去他们的网站 duix.com。社区里一次大约 48 秒成片的任务日志耗时 233 秒。短句会快一些，但仍然是「提交然后等文件」，不是一帧一帧推给直播。
+
+中文：训练接口的 `lang` 可以是 `zh`，语音是 fish-speech，识别是 FunASR，文案语言列表里有中文。官方对比表把开源这路口形写成「效果可用」，把他们的商业接口写成「效果惊艳且更高清」。这里没有显卡，也没有把镜像拉下来，所以没有自己的样片可以对照这句话。
+
+硬件以他们的 Ubuntu 22.04 说明为准：必须有 NVIDIA 显卡和驱动，推荐 RTX 4070、内存 32GB、磁盘空闲 100GB 以上。三只镜像大约 70GB。没有显卡时服务起不来。Windows 走 WSL 加 Docker。本开发环境 `nvidia-smi` 和 `docker` 都没有，所以这条路径只做了契约测试，没有真的合成过一张脸。
+
+驱动素材必须是你自己有权使用的短视频和参考音频（官方流程是大约 10 秒的视频）。仓库里的四张肖像是静止合成图，**不能**拿去当 HeyGem 的克隆底片。
+
+### 授权，两处说法不一致
+
+2026-10-31 读到的 [LICENSE](https://github.com/duixcom/Duix.Heygem/blob/main/LICENSE) 是 DUIX.COM Community License，不是 MIT，也不是 Apache。要点：
+
+- 可以在条款内使用、复制、修改、再分发。
+- 再分发或做成服务时，要随附协议、在界面或文档上显著标明 **Built with DUIX.COM**，并在用户协议里说明用了 DUIX.COM 的技术。
+- 额外商业条款：产品或服务的月活超过 1000，就要另行向 DUIX.COM 申请商业许可，对方可以不批。没批之前不能行使协议里的权利。
+- 输出按「原样」提供，对方不承担适配直播的保证。
+
+同一份 README 的对比表仍写着「全球免费商用，用户量超过 10 万或年营收超过 1000 万美元才要商业协议」。这和 LICENSE 里的 1000 月活不是同一个门槛。以 LICENSE 文件为准；要用在对外售卖的直播里，先让法务看过这份协议，不要只看那张表。
+
+灵播没有把他们的代码或镜像打进仓库。`AVATAR_PROVIDER=heygem` 且配齐之后，页脚会显示 `Built with DUIX.COM`。这只覆盖标识，不代替你自己的合规判断。
+
+### 直播上怎么用
+
+HeyGem 做不了「评论一来，嘴立刻跟上」。接法是：
+
+1. 一场口播生成后，立刻把每一句提交给 HeyGem，不挡住开播。
+2. 说到这句时，成片已经在 `HEYGEM_DATA_DIR` 里，就复制到 `/uploads/`，播出页和预览间播这句视频。
+3. 成片还没好，或者这句是观众回复：马上用本地肖像。`HEYGEM_REPLY_WAIT_MS` 默认是 0。
+4. 商品转到下一轮，同一句如果已经合成完，就改播视频。想让第一轮也等，把 `HEYGEM_SCRIPT_WAIT_MS` 调大，直播会在这一句上停住。
+
+配不齐数据目录、驱动视频或参考音频时，形象标成降级，全程用本地肖像，不会去连 8383 端口。
+
+### MuseTalk 和 LiveTalking
+
+- [MuseTalk](https://github.com/TMElyralab/MuseTalk)（腾讯音乐 Lyra）：代码 MIT，作者写明模型权重可以商用，附带的其它模型另有许可证，仓库里的测试数据不能商用。它宣称在 V100 上可以超过 30 帧，脸部区域 256，支持中文音频。限制是身份细节会丢、单帧生成会抖。官方仓库没有一个固定的 HTTP 守护进程。`AVATAR_PROVIDER=musetalk` 时，灵播会 `POST` 到 `MUSETALK_URL`：
+
+```json
+{ "text": "家人们好", "audioUrl": "/uploads/tts-1.wav", "portraitUrl": "/uploads/me.jpg", "mouthOnly": true, "hostId": "lin", "language": "zh-CN" }
+```
+
+响应要是 `{ "videoUrl": "http://..." }`。大约 8 秒没有可用地址就改播本地肖像。你需要自己用 MuseTalk 包这一层。本机没有 NVIDIA，没有跑过这个模型。
+
+- [LiveTalking](https://github.com/lipku/LiveTalking)：Apache-2.0，定位就是实时流式数字人，能用 wav2lip、MuseTalk 等模型，输出 WebRTC 和 RTMP。LiveKit 输出在他们的商用版里，不在开源版。它是另一套要单独部署的流媒体服务，这里没有接进去。
+
+所以：有显卡、有权使用的真人短视频、可以接受口播先出、回复用本地肖像，再用 HeyGem。要评论和嘴尽量对齐，在 GPU 机器上把 MuseTalk 包成上面的 HTTP，或把视频轨推进 LiveKit 房间。不配任何外部服务时，仍然是这四位肖像加文本口型。
 
 ## 接入话术模型和语音
 
@@ -289,7 +412,7 @@ MediaMTX 监听 `1935`。在控制台点「填入本地测试地址」，或自�
 `TTS_PROVIDER=http` 时，服务会 `POST` 到 `TTS_HTTP_URL`：
 
 ```json
-{ "text": "家人们好", "voice": "小林", "rate": 1, "language": "zh-CN" }
+{ "text": "家人们好", "voice": "warm-female", "name": "小林", "hostId": "lin", "rate": 1, "language": "zh-CN" }
 ```
 
 响应需要：
@@ -300,7 +423,15 @@ MediaMTX 监听 `1935`。在控制台点「填入本地测试地址」，或自�
 
 `audioUrl` 会在观众页播放；开了 LiveKit 时，导播台也会把它推进主播音轨。
 
-`AVATAR_PROVIDER=video` 加上 `AVATAR_VIDEO_URL` 时，没有 LiveKit 画面的观众会看到这段循环视频。LiveKit 一旦有主播轨，以主播轨为准。
+克隆音色三个都要 `CLONE_REF_AUDIO`（本机文件）和 `CLONE_REF_TEXT`（这段音频里说的字）。缺任何一个，系统信息里的语音会标成降级，口播只用本地时长。
+
+- `cosyvoice`：`POST {COSYVOICE_URL}/inference_zero_shot`，表单字段 `tts_text`、`prompt_text`、`prompt_wav`。这是 CosyVoice 官方 FastAPI 的零样本接口，响应是 wav 字节。
+- `gpt-sovits`：`POST {GPT_SOVITS_URL}/tts`（地址已经以 `/tts` 结尾就不再加）。JSON 含 `text`、`text_lang=zh`、`ref_audio_path`、`prompt_text`、`prompt_lang=zh`、`media_type=wav`、`streaming_mode=false`、`speed_factor`。响应是 wav 字节。
+- `f5`：F5-TTS 没有稳定的官方 REST。这里约定一个小桥，`POST {F5_TTS_URL}`，JSON 是 `{ "gen_text", "ref_audio", "ref_text", "speed" }`。响应可以是 wav 字节，或 `{ "audioUrl": "..." }`。
+
+wav 会存到 `/uploads/tts-<id>.wav`。这三个服务都要你自己部署。本仓库的测试只核对请求形状，没有连真实模型。
+
+形象接法见上一节和下面的曜灵对照。LiveKit 房间里一旦有主播视频轨，播出页以这路轨为准。
 
 对应代码：
 
@@ -317,14 +448,36 @@ MediaMTX 监听 `1935`。在控制台点「填入本地测试地址」，或自�
 ```text
 shared/        商品、场次、推流目的地、LiveKit 数据包
 server/        API、导播循环、提供者、JSON 存储
-web/           控制台、商品页、预览间、播出页
+web/           控制台、商品页、预览间、播出页、主播肖像
 agent/         LiveKit Agents 主播 worker，单独安装
 deploy/        本地 LiveKit 和 Egress 的配置
 docker-compose.livekit.yml
 docker-compose.rtmp.yml
 ```
 
-导播循环在 `server/src/director.ts`：按商品生成话术，逐段播报，段与段之间回答一条未回复的评论。
+导播循环在 `server/src/director.ts`：按商品生成话术，逐段播报，段与段之间回答一条未回复的评论。暂停时不再开口；半自动从第二句起要等「下一句」；插播排在下一句口播之前；关掉循环后，当前商品讲完就结束。
+
+## 对照曜灵（Xiling）
+
+产品目标是接近百度智能云曜灵的数字人直播间，并用开源组件把持续费用降到零：模型、LiveKit 和推流都跑在你自己的机器上。下面这张表按一份公开资料检索摘要来对照。那份摘要来自搜索片段，细节没有逐条在官方页面核对，所以这里只把它当能力清单，不把它里的价格、后台和合规条文写成已核实事实。
+
+| 曜灵能力 | 灵播现在 | 需要你的 GPU 机器验证 | 还没做 |
+| --- | --- | --- | --- |
+| 真人短视频克隆，主要驱动嘴部 | `AVATAR_PROVIDER=heygem` 预生成口播成片；`AVATAR_PROVIDER=musetalk` 按句请求，`mouthOnly: true` | HeyGem 的 Docker 和 MuseTalk 服务都要 NVIDIA。本环境没有显卡，也没有跑过这两个模型 | 仓库内不包含模型权重，也没有把 MuseTalk 包成进程 |
+| 一张照片驱动形象 | 导播台上传一张正脸，播出页用这张图，眨眼和嘴仍按所选主播的脸部位置估算 | 不需要 GPU | 不是照片重建的三维头，也不是只动嘴的像素级克隆 |
+| 克隆音色 | `TTS_PROVIDER` 可选 `cosyvoice`、`gpt-sovits`、`f5`，都吃一段参考音频和对应文本 | 三个引擎都要你自己起服务。这里只核对了请求，没有听过合成结果 | 没有在浏览器里训练音色 |
+| 推流到抖音等平台 | 多目的地 RTMP/RTMPS，密钥加密，FFmpeg 或 LiveKit Egress。预览间只是试看 | 用你的推流地址才能确认平台侧收得到 | 没有代开播、没有平台登录 |
+| 按商品自动写口播 | 已有。默认本地模板，也可接兼容 OpenAI 的模型 | 模型质量取决于你填的接口 | 没有商品知识的向量库 |
+| 弹幕问答，不必先配问答库 | 已有。本地回答用标题、价格、卖点和发货口径；问答对上了才用问答。接模型时，提示词写明问答列表可以为空，并带上商品介绍 | 模型回答要你自己看是否编造 | 没有单独的检索服务 |
+| 预生成讲解，实时插入回答 | HeyGem 在口播生成后预先提交成片；观众回答默认不等成片，先用本地肖像。MuseTalk 在大约 8 秒内返回视频就插进这一句 | 成片速度和嘴型要在 GPU 上看 | 回答没有单独的实时嘴型模型跑在本进程里 |
+| 导播台人工接管 | 已有：暂停、继续、插播一句、下一句、换下一个商品、自动 / 半自动 | 不需要 GPU。开播后在控制台「导播台」就能试 | 没有单独的硬件导播台 |
+| 7×24 轮播 | `loop` 默认开，商品名单讲完再从头 | 长时间运行要你自己盯进程 | 没有进程守护和断线告警服务 |
+| AI 数字人标识 | 默认打开。播出页、预览间和导播画面上有「AI数字人直播」，可以关掉 | 平台是否认这个字样，要看各平台当时的规则 | 没有按平台自动切换不同标识文案 |
+| 直播间装修 | 演播室背景、商品卡、价格和字幕。可换成一块纯绿底 | 绿底能不能被平台抠干净，要看推流画面 | 没有模板市场。绿幕是纯色背景，不是人像抠图 |
+| 语义动作、3D 写实、2D 精品资产库 | 四位合成肖像加待机和眨眼 |  | 这些都还没有。肖像不是真人，也不是明星 |
+| 数据看板、官方合规细则 | 控制台有评论数、回复数、口播时长 |  | 检索摘要里没在官方页核实到的后台和规则，这里不编 |
+
+开播前请打开 AI 标识。不要把循环打开后就离开：没有人接管、也不回答评论的纯循环，可能被平台当成录播。评论回复保持可用，半自动时用「下一句」往下走。
 
 ## 测试
 
@@ -333,8 +486,8 @@ npm test
 npm run typecheck
 ```
 
-测试覆盖商品存储、本地话术和问答、模型或语音失败时的回退、开播后回答观众、LiveKit 令牌的推流权限、没配密钥时退回本地房间、串流密钥加密、FFmpeg 断线重连、Egress 的 RTMP 参数，以及抖音评论回调进房后被主播回答。
+测试覆盖商品存储、主播人设的保存和未知形象回退、口型时间轴、HTTP 形象和 MuseTalk 的请求与失败回退、克隆音色的请求形状、开播后把口播视频地址带上、暂停时插播不先说、关掉循环后本轮商品讲完就结束、本地话术和问答、模型或语音失败时的回退、开播后回答观众、LiveKit 令牌的推流权限、没配密钥时退回本地房间、串流密钥加密、FFmpeg 断线重连、Egress 的 RTMP 参数，以及抖音评论回调进房后被主播回答。
 
 ## 上线之前
 
-这是单机可跑的商家工具，还没有登录。不要把 API 和评论回调直接暴露到公网。串流密钥在本机加密，换机器时带上 `OUTPUT_SECRET` 或 `output.key`。正式使用前至少还要补：账号与权限、评论审核、广告法范围内的承诺校验、真实库存和订单、把 JSON 换成数据库。数字人的嘴型和声音如果要对外播出，用 LiveKit Agent 加正式 TTS，再用 Egress 推到平台，而不是靠浏览器朗读。
+这是单机可跑的商家工具，还没有登录。不要把 API 和评论回调直接暴露到公网。串流密钥在本机加密，换机器时带上 `OUTPUT_SECRET` 或 `output.key`。正式使用前至少还要补：账号与权限、评论审核、广告法范围内的承诺校验、真实库存和订单、把 JSON 换成数据库。本地口型是按字和音量估算的。要对平台播出更接近真人的嘴型，用 `AVATAR_PROVIDER=http` 接一段一段的口播视频，用 `AVATAR_PROVIDER=heygem` 在有显卡的机器上预生成口播成片，用 `AVATAR_PROVIDER=musetalk` 接只动嘴的口型服务，或用 `AVATAR_PROVIDER=livekit` 接 Agents 形象插件。音色用 `cosyvoice`、`gpt-sovits` 或 `f5`，再由 Egress 推到平台。HeyGem 不是实时嘴，回复默认仍走本地肖像。浏览器朗读仍然进不了推流。播出页默认带「AI数字人直播」。不要无人值守地开着纯循环。

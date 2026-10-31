@@ -5,12 +5,14 @@
  * 并可选调用浏览器 speechSynthesis 播放。
  * http：POST JSON 到 TTS_HTTP_URL，期望响应 { "audioUrl": "...", "durationMs": 2400 }。
  * 失败时退回 mock。
+ * cosyvoice / gpt-sovits / f5：见 cloneTts.ts。缺地址或参考音频时退回 mock。
  *
  * 请求体：
- * { "text": "家人们好", "voice": "小林", "rate": 1, "language": "zh-CN" }
+ * { "text": "家人们好", "voice": "warm-female", "name": "小林", "hostId": "lin", "rate": 1, "language": "zh-CN" }
  */
 import type { Persona } from '@lingbo/shared';
 import type { AppConfig } from '../config';
+import { createCloneTts } from './cloneTts';
 import type { SpeechClip, TtsProvider } from './types';
 
 export function estimateSpeechMs(text: string, speechRate: number): number {
@@ -51,7 +53,9 @@ export class HttpTts implements TtsProvider {
         },
         body: JSON.stringify({
           text,
-          voice: persona.name,
+          voice: persona.voice,
+          name: persona.name,
+          hostId: persona.hostId,
           rate: persona.speechRate,
           language: 'zh-CN',
         }),
@@ -79,5 +83,8 @@ export class HttpTts implements TtsProvider {
 export function createTts(config: AppConfig, fetchImpl: typeof fetch = fetch): TtsProvider {
   const mock = new MockTts();
   if (config.ttsProvider === 'http' && config.ttsHttpUrl) return new HttpTts(config, mock, fetchImpl);
+  if (config.ttsProvider === 'cosyvoice' || config.ttsProvider === 'gpt-sovits' || config.ttsProvider === 'f5') {
+    return createCloneTts(config, mock, fetchImpl) ?? mock;
+  }
   return mock;
 }

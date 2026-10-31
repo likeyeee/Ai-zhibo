@@ -6,7 +6,10 @@
  * 配了 LINGBO_TTS_MODEL 时，用 Agents 的 inference TTS 调用 session.say，
  * 声音作为参与者音轨进房间，再由 Egress 合成后推到抖音等平台。
  *
- * 不配 TTS 时 worker 仍然进房，只把口播打到日志，方便确认调度通了。
+ * 调度 metadata 里有 hostId、voice 和 avatar。形象要接 Tavus、Hedra、Simli、
+ * bitHuman 或自建唇形模型时，在这个 worker 里换成对应的 Agents 插件，
+ * 让它把视频轨推进同一个房间。API 侧把 AVATAR_PROVIDER 设为 livekit，
+ * 播出页会优先播这路远程画面。不配 TTS 时 worker 仍然进房，只把口播打到日志。
  * 安装：在 agent/ 里 npm install，然后
  * LIVEKIT_URL=ws://localhost:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret npm run dev
  */
