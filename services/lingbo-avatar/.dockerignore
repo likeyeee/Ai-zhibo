@@ -1,0 +1,6 @@
+models
+third_party
+media
+tests
+**/__pycache__
+**/*.pyc

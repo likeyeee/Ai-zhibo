@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+data
+server/data
+web/dist
+.env
+.env.local
+*.log
+.DS_Store
+*.tmp
+services/lingbo-avatar/models/
+services/lingbo-avatar/third_party/
+services/lingbo-avatar/media/
+**/__pycache__/
+*.pyc

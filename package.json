@@ -1,0 +1,23 @@
+{
+  "name": "lingbo",
+  "private": true,
+  "description": "灵播：AI 数字人直播带货",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c red,blue \"npm run dev -w @lingbo/server\" \"npm run dev -w @lingbo/web\"",
+    "start": "npm run start -w @lingbo/server",
+    "build": "npm run build -w @lingbo/web",
+    "test": "npm run test -w @lingbo/server",
+    "typecheck": "npm run typecheck -w @lingbo/server && npm run typecheck -w @lingbo/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

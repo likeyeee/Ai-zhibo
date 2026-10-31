@@ -1,0 +1,2 @@
+edge-tts>=6.1.19
+livekit>=0.17.0

@@ -1,0 +1,13 @@
+{
+  "name": "@lingbo/agent",
+  "private": true,
+  "type": "module",
+  "description": "灵播的 LiveKit Agents 主播。独立进程，不进 API。",
+  "scripts": {
+    "dev": "node --experimental-strip-types src/worker.ts dev"
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.2.0",
+    "@livekit/rtc-node": "^0.13.22"
+  }
+}

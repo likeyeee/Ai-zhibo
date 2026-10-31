@@ -1,0 +1,37 @@
+# 本地 LiveKit：房间、Agent 调度、Egress 推 RTMP 都靠这一组。
+# 启动：docker compose -f docker-compose.livekit.yml up
+# 浏览器和容器在同一台机器时，node_ip 127.0.0.1 让媒体地址指向本机。
+# Egress 里的 Chrome 要打开灵播的播出页，所以给了 host.docker.internal。
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --bind 0.0.0.0
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./deploy/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  egress:
+    image: livekit/egress:latest
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    volumes:
+      - ./deploy/egress.yaml:/etc/egress.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    cap_add:
+      - SYS_ADMIN
+    depends_on:
+      - redis
+      - livekit
+    restart: unless-stopped

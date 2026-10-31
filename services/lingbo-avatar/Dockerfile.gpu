@@ -1,0 +1,25 @@
+# 在已经执行 download_models.py --musetalk 之后构建。
+# 这一步会按 MuseTalk 的 requirements 安装 PyTorch，镜像体积很大。
+# 云端这台机器没有 NVIDIA，也没有构建过这个镜像。
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    LINGBO_IN_DOCKER=1 \
+    LINGBO_PORT=8790 \
+    MUSETALK_ROOT=/models/MuseTalk
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-pip ffmpeg git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt /tmp/lingbo-requirements.txt
+COPY models/MuseTalk/requirements.txt /tmp/musetalk-requirements.txt
+RUN pip3 install --no-cache-dir -r /tmp/lingbo-requirements.txt \
+    && pip3 install --no-cache-dir -r /tmp/musetalk-requirements.txt
+COPY lingbo_avatar ./lingbo_avatar
+COPY download_models.py .
+
+EXPOSE 8790
+CMD ["python3", "-m", "lingbo_avatar"]
