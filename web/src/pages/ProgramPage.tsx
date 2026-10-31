@@ -75,6 +75,7 @@ export function ProgramPage() {
       room: null,
       role: 'viewer',
       publishMedia: false,
+      hostPublisher: 'browser',
     };
     let handle: Awaited<ReturnType<typeof connectLiveKit>> | null = null;
     connectLiveKit(join, () => undefined, (kind, track) => {

@@ -6,6 +6,7 @@
  * http：POST JSON 到 TTS_HTTP_URL，期望响应 { "audioUrl": "...", "durationMs": 2400 }。
  * 失败时退回 mock。
  * cosyvoice / gpt-sovits / f5：见 cloneTts.ts。缺地址或参考音频时退回 mock。
+ * lingbo：本机 services/lingbo-avatar。服务没起来时仍返回 lingbo，时长按字数估算。
  *
  * 请求体：
  * { "text": "家人们好", "voice": "warm-female", "name": "小林", "hostId": "lin", "rate": 1, "language": "zh-CN" }
@@ -13,6 +14,7 @@
 import type { Persona } from '@lingbo/shared';
 import type { AppConfig } from '../config';
 import { createCloneTts } from './cloneTts';
+import { createLingboTts } from './lingbo';
 import type { SpeechClip, TtsProvider } from './types';
 
 export function estimateSpeechMs(text: string, speechRate: number): number {
@@ -82,6 +84,7 @@ export class HttpTts implements TtsProvider {
 
 export function createTts(config: AppConfig, fetchImpl: typeof fetch = fetch): TtsProvider {
   const mock = new MockTts();
+  if (config.ttsProvider === 'lingbo') return createLingboTts(config, fetchImpl);
   if (config.ttsProvider === 'http' && config.ttsHttpUrl) return new HttpTts(config, mock, fetchImpl);
   if (config.ttsProvider === 'cosyvoice' || config.ttsProvider === 'gpt-sovits' || config.ttsProvider === 'f5') {
     return createCloneTts(config, mock, fetchImpl) ?? mock;

@@ -15,15 +15,15 @@ export type ScriptKind = 'opening' | 'selling_point' | 'price' | 'faq' | 'closin
 
 export type LlmProviderId = 'mock' | 'openai';
 
-export type TtsProviderId = 'mock' | 'http' | 'cosyvoice' | 'gpt-sovits' | 'f5';
+export type TtsProviderId = 'mock' | 'http' | 'cosyvoice' | 'gpt-sovits' | 'f5' | 'lingbo';
 
-export type AvatarProviderId = 'local' | 'video' | 'http' | 'livekit' | 'heygem' | 'musetalk';
+export type AvatarProviderId = 'local' | 'video' | 'http' | 'livekit' | 'heygem' | 'musetalk' | 'lingbo';
 
 export type RealtimeProviderId = 'local' | 'livekit';
 
 export type RealtimeRole = 'host' | 'viewer';
 
-export type HostPublisherMode = 'browser' | 'agent';
+export type HostPublisherMode = 'browser' | 'agent' | 'lingbo';
 
 /** LiveKit data channel topic. Agents and browsers share this packet shape. */
 export const LIVEKIT_TOPIC = 'lingbo';
@@ -172,6 +172,7 @@ export interface RealtimeJoin {
   token: string | null;
   role: RealtimeRole;
   publishMedia: boolean;
+  hostPublisher: HostPublisherMode;
 }
 
 export interface RealtimeDataPacket {

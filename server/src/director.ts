@@ -4,6 +4,7 @@ import type { LiveHub } from './liveHub';
 import type { AgentDispatcher } from './providers/agentDispatch';
 import type { AvatarProvider } from './providers/avatar';
 import type { OutputManager } from './providers/output/manager';
+import { mintPublisherToken } from './providers/realtime';
 import type { LlmProvider, TtsProvider } from './providers/types';
 import { ViewerSimulator } from './simulator';
 import { interruptibleSleep } from './sleep';
@@ -242,6 +243,23 @@ export class SessionDirector {
           audioUrl: clip.audioUrl,
           portraitUrl: live?.show.portraitUrl ?? null,
         });
+    if (!signal.aborted && this.config.livekitHostPublisher === 'lingbo') {
+      const token = await mintPublisherToken(this.config, sessionId);
+      if (token) {
+        await this.avatar
+          .publishToRoom?.({
+            text,
+            persona,
+            audioUrl: clip.audioUrl,
+            videoUrl: avatarVideoUrl,
+            livekitUrl: this.config.livekitUrl,
+            token,
+          })
+          .catch((error: unknown) => {
+            console.error('本机数字人进房失败，画面仍走预览页', error instanceof Error ? error.message : 'publish_failed');
+          });
+      }
+    }
     if (signal.aborted) return;
     const session = this.store.setCaption(sessionId, text);
     const product = this.store.getProduct(productId);

@@ -185,7 +185,7 @@ export function HostPublisher({
       <div className="monitor-head">
         <h3>{t('realtime.preview')}</h3>
         <span className={phase === 'publish' || phase === 'agent' ? 'pill live' : 'pill'}>
-          {phase === 'failed' ? t('realtime.failed') : phase === 'agent' ? t('realtime.agent') : t('realtime.connected')}
+          {phase === 'failed' ? t('realtime.failed') : phase === 'agent' ? (join?.hostPublisher === 'lingbo' ? t('realtime.lingbo') : t('realtime.agent')) : t('realtime.connected')}
         </span>
       </div>
       {phase === 'publish' ? <canvas ref={canvasRef} className="broadcast-canvas" /> : null}

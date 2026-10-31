@@ -78,7 +78,7 @@ export function Layout() {
                   {t('system.tts')} · {providerName(system.tts.id, t)}
                 </span>
                 <span>
-                  {t('system.avatar')} · {avatarLabel(system.avatar.id, t)}
+                  {t('system.avatar')} · {avatarLabel(system.avatar.configured === 'lingbo' ? 'lingbo' : system.avatar.id, t)}
                 </span>
                 <span>
                   {t('system.realtime')} · {system.realtime.id === 'livekit' ? t('system.livekit') : t('system.localRoom')}
@@ -101,6 +101,7 @@ export function Layout() {
 }
 
 function avatarLabel(id: string, t: ReturnType<typeof useI18n>['t']) {
+  if (id === 'lingbo') return t('system.lingbo');
   if (id === 'heygem') return t('system.avatarHeygem');
   if (id === 'musetalk') return t('system.avatarMusetalk');
   if (id === 'http') return t('system.avatarHttp');
@@ -116,6 +117,7 @@ function providerName(id: string, t: ReturnType<typeof useI18n>['t']) {
   if (id === 'cosyvoice') return t('system.cosyvoice');
   if (id === 'gpt-sovits') return t('system.gptSovits');
   if (id === 'f5') return t('system.f5');
+  if (id === 'lingbo') return t('system.ttsLingbo');
   if (id === 'video') return t('system.video');
   return t('system.local');
 }

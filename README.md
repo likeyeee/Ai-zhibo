@@ -11,7 +11,7 @@
 - **React + Vite**：直播间要持续画口型、接实时事件，用组件状态比服务端模板直接。
 - **Fastify**：HTTP 和 WebSocket 在同一个进程里，直播控制面比较轻。
 - **JSON 文件**：商品、场次和评论落在 `server/data/db.json`。没有原生数据库依赖，换存储时只改 `JsonStore`。
-- **提供者接口**：话术、语音、形象、实时通道都可以换。不配密钥时全部走本地模拟，克隆下来就能把主流程跑通。
+- **提供者接口**：话术、语音、形象、实时通道都可以换。默认语音和形象指向本机数字人服务；服务没启动时，语音按字数估时长，形象用二维肖像。不配付费密钥也能把主流程跑通。
 
 实时层、数字人参与者和对外推流都围绕 [LiveKit](https://github.com/livekit/livekit) 来做，而不是再写一套 WebRTC。场次节奏（写话术、轮播、回复评论）仍由本仓库的导播循环负责。没有 LiveKit、也没有推流地址时，预览、口播和评论照样能跑完。见下文「LiveKit 在这里做什么」。
 
@@ -19,7 +19,7 @@
 
 - 商品：名称、价格、图片、卖点、常见问题。可上传图片，也可以载入三件示例。
 - 话术：按商品资料和语气生成口播。默认是本地模板；配置了兼容 OpenAI 的接口就改走模型，失败会退回模板。
-- 数字人：四位可选主播（小林、周衡、阿燃、陈姐），各有名字、声音、语气和肖像。本地用演播室背景、眨眼、待机动作，以及跟着口播走的口型。也可以上传一张正脸照片。HeyGem 和 MuseTalk 用来接真人短视频克隆（只驱动嘴部），LiveKit 远程形象和循环视频仍然可用。
+- 数字人：四位可选主播（小林、周衡、阿燃、陈姐），各有名字、声音、语气和肖像。默认接本机数字人服务：中文语音，以及在你的 NVIDIA 显卡上用 MuseTalk 做口型。服务没起来时，仍用演播室背景、眨眼、待机和二维口型。也可以上传一张正脸照片。HeyGem、单独的 MuseTalk HTTP、LiveKit 上的付费形象插件和循环视频仍然可以切换。
 - 预览间：看主播、商品卡和公屏。评论会进入队列，主播在下一小段之前回答。
 - 平台推流：每个平台一条目的地（服务器地址 + 串流密钥）。开播后合成数字人画面和商品字幕，用 FFmpeg 或 LiveKit Egress 推 RTMP/RTMPS。控制台能看连接、推流中、重连和失败。
 - 平台评论：只收你自己服务器上的回调，不抓平台的私有接口。
@@ -27,7 +27,7 @@
 
 ## 环境
 
-Node.js 20 或以上。语音和形象的真实服务是可选的。LiveKit 也是可选的，需要 Docker 时再装。
+Node.js 20 或以上。本机数字人服务是可选的 Python 进程，装在有 NVIDIA 显卡的电脑上。LiveKit 也是可选的，需要 Docker 时再装。不装它们，`npm run dev` 一样能预览。
 
 ## 跑起来
 
@@ -72,14 +72,16 @@ npm start
 | `DATA_DIR` | 数据目录，默认 `server/data` |
 | `LLM_PROVIDER` | `mock` 或 `openai`。后者任何兼容 Chat Completions 的地址都可以 |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 模型接口 |
-| `TTS_PROVIDER` | `mock`、`http`、`cosyvoice`、`gpt-sovits` 或 `f5` |
+| `TTS_PROVIDER` | 默认 `lingbo`。也可 `mock`、`http`、`cosyvoice`、`gpt-sovits`、`f5` |
 | `TTS_HTTP_URL` / `TTS_API_KEY` | `http` 语音服务 |
 | `CLONE_REF_AUDIO` / `CLONE_REF_TEXT` | 克隆音色的参考音频路径和对应文本。三个克隆引擎都要 |
 | `COSYVOICE_URL` / `GPT_SOVITS_URL` / `F5_TTS_URL` | 对应引擎的地址。没配齐时退回本地时长 |
-| `AVATAR_PROVIDER` | `local`、`http`、`livekit`、`video`、`heygem` 或 `musetalk` |
+| `AVATAR_PROVIDER` | 默认 `lingbo`。也可 `local`、`http`、`livekit`、`video`、`heygem`、`musetalk` |
 | `AVATAR_VIDEO_URL` | `video` 时的循环视频地址 |
 | `AVATAR_HTTP_URL` / `AVATAR_API_KEY` | `http` 时每句口播换一段视频的地址和密钥 |
-| `MUSETALK_URL` | `musetalk` 时的口型服务。请求里 `mouthOnly` 为 true，大约 8 秒没返回就改用本地肖像 |
+| `LINGBO_AVATAR_URL` | 本机数字人服务，默认 `http://127.0.0.1:8790` |
+| `LINGBO_CLIP_TIMEOUT_MS` | 等一句口型视频的最长时间，默认 15000。超时后这一句用二维口型 |
+| `MUSETALK_URL` | `musetalk` 时的另一套口型服务。请求里 `mouthOnly` 为 true，大约 8 秒没返回就改用本地肖像 |
 | `HEYGEM_VIDEO_URL` / `HEYGEM_TTS_URL` | `heygem` 时本机成片服务和语音服务，默认 `8383` 和 `18180` |
 | `HEYGEM_DATA_DIR` | 和 HeyGem 视频容器共用的成品目录。官方客户端在 Linux 上是 `~/duix_avatar_data/face2face/temp` |
 | `HEYGEM_VIDEO_PATH` / `HEYGEM_HOST_VIDEOS` | 驱动视频在容器里的路径。后者按主播分开，如 `lin=lin.mp4,heng=heng.mp4` |
@@ -91,7 +93,7 @@ npm start
 | `REALTIME_PROVIDER` | `local` 或 `livekit` |
 | `LIVEKIT_URL` | 例如 `ws://localhost:7880` |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | 只放在服务端，用来签发进房令牌 |
-| `LIVEKIT_HOST_PUBLISHER` | `browser` 或 `agent` |
+| `LIVEKIT_HOST_PUBLISHER` | `browser`（默认）、`agent` 或 `lingbo`。`lingbo` 时由本机服务进房推音频 |
 | `LIVEKIT_AGENT_NAME` | Agent worker 的名字，默认 `lingbo-host` |
 | `OUTPUT_PROVIDER` | `mock`、`ffmpeg` 或 `livekit` |
 | `PROGRAM_BASE_URL` | Egress 打开播出页用的根地址，例如 `http://host.docker.internal:5173` |
@@ -318,6 +320,7 @@ MediaMTX 监听 `1935`。在控制台点「填入本地测试地址」，或自�
 | 音量修正口型 | 只有这句口播真的有音频地址时才会用。模拟语音没有音频，所以不会走到这里 |
 | `AVATAR_PROVIDER=http` | 真的 HTTP 调用。每句口播 `POST` 到 `AVATAR_HTTP_URL`。成功就播放返回的视频；失败则这句退回本地肖像，系统栏标成降级 |
 | `AVATAR_PROVIDER=livekit` | 配置是真的：LiveKit 凭证齐全时，播出页和预览间优先播房间里的远程视频轨。Tavus、Hedra、Simli、bitHuman 或自建唇形模型要作为 Agents 插件或 Ingress 进这个房间，本仓库不打包这些 SDK |
+| `AVATAR_PROVIDER=lingbo`（默认） | 调用是真的。服务在就保存 wav；MuseTalk 写出 mp4 才替换二维嘴。服务不在就标成降级，继续二维肖像。云主机上只跑了静音 wav 和假响应，没有跑过模型和显卡 |
 | `AVATAR_PROVIDER=heygem` | 调用是真的，成片本身要另有一台带 NVIDIA 显卡的 HeyGem。口播会预先提交；默认不等结果。回复走本地肖像，除非这句成片已经好了。本机没有显卡和 Docker，这里没有实际跑过 HeyGem |
 | `AVATAR_PROVIDER=video` | 真的循环播放 `AVATAR_VIDEO_URL`。没填地址则退回本地肖像 |
 | 浏览器朗读 | 仍只在预览这台电脑上出声，不进 LiveKit 音轨，也不进推流 |
@@ -337,7 +340,116 @@ MediaMTX 监听 `1935`。在控制台点「填入本地测试地址」，或自�
 
 `videoUrl` 必须是 http 或 https。导播把这个地址放进这场的 `speech` 事件，播出页和预览间播这一句，播完回到肖像。
 
-`AVATAR_PROVIDER=livekit` 且 `REALTIME_PROVIDER=livekit`、三项 LiveKit 凭证都在时，系统信息里的形象是 `livekit`。Agent 调度的 metadata 里带 `hostId`、`voice` 和 `avatar`。`agent/src/worker.ts` 里换成 [LiveKit Agents 的形象插件](https://github.com/livekit/agents)（Tavus、Hedra、Simli、bitHuman 等），或让供应商把 RTMP 送进 Ingress（参与者 `avatar-source`）。房间里一有视频轨，播出页就用它，不再画本地肖像。凭证不全时自动退回本地肖像，并标成降级。
+`AVATAR_PROVIDER=livekit` 且 `REALTIME_PROVIDER=livekit`、三项 LiveKit 凭证都在时，系统信息里的形象是 `livekit`。Agent 调度的 metadata 里带 `hostId`、`voice` 和 `avatar`。`agent/src/worker.ts` 里换成 [LiveKit Agents 的形象插件](https://github.com/livekit/agents)（Tavus、Hedra、Simli、bitHuman 等），或让供应商把 RTMP 送进 Ingress（参与者 `avatar-source`）。房间里一有视频轨，播出页就用它，不再画本地肖像。凭证不全时自动退回本地肖像，并标成降级。这些付费形象保持为可切换插件，默认不启用。
+
+## 本机数字人（默认，零持续费用）
+
+`TTS_PROVIDER` 和 `AVATAR_PROVIDER` 的默认值都是 `lingbo`。它是仓库里的独立进程 `services/lingbo-avatar`，不把模型打进 Node 进程，也没有按分钟计费的数字人接口。服务没启动时，页脚仍显示「本机数字人 / 本机语音」，并标成降级：口播按字数估时长，画面用原来的二维肖像。
+
+选它做默认口型，是因为在常见的开源说话头里，它最接近「消费级显卡、中文语音、主要动嘴」：
+
+| 方案 | 取舍 |
+| --- | --- |
+| MuseTalk 1.5 | 采用。代码 MIT。作者在 README 里写明训练权重可用于包括商用在内的任何目的。脸部区域 256，25fps，吃一张图或一段视频加一条音频。官方 `inference.sh v1.5 realtime` 的说明是：先把脸的关键点和潜变量准备好，在线时只跑 UNet 和 VAE 解码，从而做到实时。论文里的数字是准备好之后在 V100 上超过 30fps |
+| Wav2Lip | 不作为默认。常见权重的使用条款限制商用 |
+| SadTalker | 不作为默认。整张脸会动，短句在消费级显卡上通常比只动嘴更慢，检查点也常带非商用条款 |
+| LivePortrait | 不作为默认。代码 MIT，但检测用的 InsightFace 模型是非商用研究许可。它更偏表情迁移，不是按中文音频逐句对口型 |
+
+附带模型不在 MuseTalk 这一句授权里：Whisper tiny、`stabilityai/sd-vae-ft-mse`（CreativeML OpenRAIL-M）、DWPose、人脸解析权重、仓库自带的测试视频。测试数据不能商用。Hugging Face 上的模型卡如果和 README 不一致，以你下载到的那张卡和 LICENSE 为准。本服务固定克隆的提交是 `0a89dec45a0192b824e3cf4daf96c239440c5ed8`（2026-10-31 读过这一版的 `scripts/inference.py`，它没有 `--skip_save_images`；这个参数在 `scripts/realtime_inference.py` 上，打开之后只计时、不写视频）。
+
+### 语音
+
+| 引擎 | 何时用 | 许可和使用上要知道的事 |
+| --- | --- | --- |
+| Edge TTS（默认） | `LINGBO_TTS=edge` 或 `auto`，并且装了 `edge-tts` | 仓库 [rany2/edge-tts](https://github.com/rany2/edge-tts) 主体是 LGPL-3.0（`srt_composer.py` 是 MIT）。它调用微软 Edge 的在线神经网络语音，不需要你自己的密钥，也没有按量账单。断网或接口变更时，这一句改成静音 wav。进程独立，不把这份代码嵌进 Node |
+| Piper | `LINGBO_TTS=piper`，并设置 `PIPER_MODEL` | 当前 [OHF-Voice/piper1-gpl](https://github.com/OHF-Voice/piper1-gpl) 是 GPL-3.0，并带有 GPL 的 espeak-ng。灵播只调用 `piper` 命令行，不把它链进 Node。中文音色 `zh_CN-huayan-medium` 来自 rhasspy 的音色库，声源署名是 HuaYan TTS，商用前要看该音色自己的说明。旧的 rhasspy/piper 已归档，许可证是 MIT |
+| 静音 wav | 上面两者都不可用 | 纯 Python 标准库生成，时长大约按每个字 150 毫秒，限制在 0.8 到 7 秒。Node 看到引擎是静音时不把这段音频交给页面，字幕仍按这个时长走，浏览器朗读可以继续出声，页脚标成降级 |
+| CosyVoice / GPT-SoVITS / F5 | `TTS_PROVIDER` 改成对应名字 | 仍是可选插件。F5 常见权重是 CC-BY-NC，不能把它们说成默认可商用 |
+
+四位主播在 Edge 上的声音：小林 `zh-CN-XiaoxiaoNeural`，周衡 `zh-CN-YunxiNeural`，阿燃 `zh-CN-XiaoyiNeural`，陈姐 `zh-CN-XiaomoNeural`。语速 1 是 `+0%`，1.2 是 `+20%`，0.85 是 `-15%`。
+
+### 显存和延迟（预期，不是本机测量）
+
+这台用来写代码的云主机没有 NVIDIA，也没有 Docker。下面的数字来自 MuseTalk 仓库和它的论文描述，需要你在自己的显卡上重新计时。
+
+| 项目 | 预期 |
+| --- | --- |
+| 显存 | fp16 的 v1.5 UNet 大约 3.4–4GB。8GB 显卡可以装下模型。要同时编码和把帧推进 LiveKit，更稳妥的是 12GB 以上（例如 RTX 3060 12GB、RTX 4070）。作者在 README 里举过 RTX 3050 Ti 笔记本 4GB 的例子：一段 8 秒的视频大约要 5 分钟，那是生成，不是近实时 |
+| 官方实时口径 | 准备好 `latents.pt` 之后，V100 上超过 30fps，开头等待很短。消费级显卡要以你机器上的 `/health` 和日志为准 |
+| 本服务的等待 | `LINGBO_TALK_WAIT_MS` 默认 8000。这一句在时限内写出 mp4，播出页才改播口型视频；否则继续二维嘴。Node 侧 `LINGBO_CLIP_TIMEOUT_MS` 默认 15000 |
+| 第一句 | 要做一次人脸关键点。同一张肖像会把关键点和潜变量缓存在 `results/lingbo-cache/`，下一句同一张脸会少掉这一步。模型只在常驻子进程里加载一次 |
+| Edge 语音 | 网络正常时，短句的第一段音频常常在一秒内返回。这里没有打到微软的接口，所以没有实测 |
+| Piper | 短句在 CPU 上常常是几百毫秒。这里没有安装 piper，没有实测 |
+
+### 在有 NVIDIA 的 Windows 或 Linux 上安装
+
+Linux 需要驱动、Docker（要用容器时）和 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)。Windows 用 Docker Desktop 的 WSL2 后端，并在设置里打开 GPU。容器里看到的是 Linux，权重脚本用 `download_weights.sh` 即可。
+
+不使用 Docker、直接在这台机器上跑（语音可以先不装显卡驱动）：
+
+```bash
+cd services/lingbo-avatar
+python3 -m venv .venv
+source .venv/bin/activate          # Windows：.venv\Scripts\activate
+pip install -r requirements.txt    # edge-tts 和 livekit
+python3 download_models.py --piper # 可选，约 63MB，还要自己安装 piper 可执行文件
+export PIPER_MODEL="$PWD/models/piper/zh_CN-huayan-medium.onnx"
+export LINGBO_TTS=edge             # 想完全离线就改成 piper
+python3 -m lingbo_avatar           # 监听 0.0.0.0:8790
+```
+
+要口型，再在这台 GPU 机器上：
+
+```bash
+python3 download_models.py --musetalk    # 只克隆，固定到上面的提交
+python3 download_models.py --weights     # 体积很大，会访问 Hugging Face 和 Google Drive
+# 按 MuseTalk 自己的 requirements.txt 安装 PyTorch。这一步只在 GPU 机器上做
+pip install -r models/MuseTalk/requirements.txt
+export MUSETALK_ROOT="$PWD/models/MuseTalk"
+export LINGBO_TALKING_HEAD=auto
+python3 -m lingbo_avatar
+```
+
+Windows 上如果不用 WSL，Piper 和 Python 用本机安装；MuseTalk 官方另有 `download_weights.bat`。路径按上面的环境变量指到克隆目录。
+
+Docker（语音镜像不包含 PyTorch；口型镜像见 `Dockerfile.gpu`，要先克隆 MuseTalk 再构建）：
+
+```bash
+cd services/lingbo-avatar
+python3 download_models.py --musetalk
+python3 download_models.py --weights
+docker compose -f docker-compose.yml build
+# 口型：docker build -f Dockerfile.gpu -t lingbo-avatar:gpu .  然后把 compose 的 image 指过去
+docker compose up
+```
+
+`gpus: all` 需要 NVIDIA 运行时。容器里的 `LINGBO_IN_DOCKER=1` 会把 LiveKit 地址里的 `localhost` / `127.0.0.1` 改成 `host.docker.internal`，这样服务能推进宿主机上的 LiveKit。
+
+`GET /health` 会给出当前语音引擎、口型引擎（`portrait`、`loading` 或 `musetalk`）、`cuda` 和有没有 livekit 包。
+
+### 画面怎么进房间
+
+默认 `LIVEKIT_HOST_PUBLISHER=browser`：控制台继续用画布把二维主播推进房间，本机服务只负责产出 wav，以及来得及的口型 mp4。这样在服务没启动时，房间里仍然有画面。
+
+GPU 机器上要改成服务推流时：
+
+```bash
+REALTIME_PROVIDER=livekit
+LIVEKIT_URL=ws://localhost:7880
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secret
+LIVEKIT_HOST_PUBLISHER=lingbo
+```
+
+导播循环会另签一张身份为 `lingbo-avatar` 的令牌，`POST /v1/publish`。服务立刻返回，再在后台按音频时长把采样推进房间。只有这一句的引擎是 `musetalk` 时才推视频帧。没有口型视频时，播出页和预览间继续画二维嘴；房间里的音频由这路轨播放，页面不再叠一层浏览器朗读。
+
+`AVATAR_PROVIDER=http`、`video`、`heygem`、`musetalk`、`livekit`（Tavus、Hedra、Simli、bitHuman）都还在，改环境变量即可换走。
+
+### 这台云主机上核对过什么
+
+核对过：Python 契约测试（`/health`、静音 wav、`/v1/clip` 的 `videoUrl` 为空、没有 livekit 包时 `/v1/publish` 返回 `livekit_sdk_missing`）、MuseTalk v1.5 参数列表、Node 用假的 HTTP 响应把 wav 和 mp4 存进 `/uploads/`、服务不可达时退回二维肖像。`python3 services/lingbo-avatar/tests/test_contract.py` 不进 `npm test`，避免 CI 依赖 Python 或显卡。
+
+没有核对：Edge 的实际声音、Piper、MuseTalk 加载和嘴型、Docker 镜像构建、LiveKit 里的帧延迟、任何一块消费级显卡上的帧率。这些要在你的 GPU 电脑上做。
 
 ## HeyGem 适不适合接进来
 
@@ -437,7 +549,9 @@ wav 会存到 `/uploads/tts-<id>.wav`。这三个服务都要你自己部署。�
 
 - `server/src/providers/llm.ts`
 - `server/src/providers/tts.ts`
+- `server/src/providers/lingbo.ts`
 - `server/src/providers/avatar.ts`
+- `services/lingbo-avatar/`
 - `server/src/providers/realtime.ts`
 - `server/src/providers/output/`
 - `server/src/providers/ingest.ts`
@@ -449,6 +563,7 @@ wav 会存到 `/uploads/tts-<id>.wav`。这三个服务都要你自己部署。�
 shared/        商品、场次、推流目的地、LiveKit 数据包
 server/        API、导播循环、提供者、JSON 存储
 web/           控制台、商品页、预览间、播出页、主播肖像
+services/lingbo-avatar/  本机中文语音和 MuseTalk 口型，单独进程
 agent/         LiveKit Agents 主播 worker，单独安装
 deploy/        本地 LiveKit 和 Egress 的配置
 docker-compose.livekit.yml
@@ -463,13 +578,13 @@ docker-compose.rtmp.yml
 
 | 曜灵能力 | 灵播现在 | 需要你的 GPU 机器验证 | 还没做 |
 | --- | --- | --- | --- |
-| 真人短视频克隆，主要驱动嘴部 | `AVATAR_PROVIDER=heygem` 预生成口播成片；`AVATAR_PROVIDER=musetalk` 按句请求，`mouthOnly: true` | HeyGem 的 Docker 和 MuseTalk 服务都要 NVIDIA。本环境没有显卡，也没有跑过这两个模型 | 仓库内不包含模型权重，也没有把 MuseTalk 包成进程 |
+| 真人短视频克隆，主要驱动嘴部 | 默认 `AVATAR_PROVIDER=lingbo`：本机服务在 GPU 上用 MuseTalk 1.5 只动嘴。HeyGem 仍可预生成口播成片；`musetalk` 仍是另一套 HTTP | MuseTalk 权重、Docker 和嘴型都要在你的 NVIDIA 上跑。这台云主机没有显卡，只核对了接口和参数 | 仓库不带权重。官方实时数字是准备好潜变量之后在 V100 上的口径 |
 | 一张照片驱动形象 | 导播台上传一张正脸，播出页用这张图，眨眼和嘴仍按所选主播的脸部位置估算 | 不需要 GPU | 不是照片重建的三维头，也不是只动嘴的像素级克隆 |
-| 克隆音色 | `TTS_PROVIDER` 可选 `cosyvoice`、`gpt-sovits`、`f5`，都吃一段参考音频和对应文本 | 三个引擎都要你自己起服务。这里只核对了请求，没有听过合成结果 | 没有在浏览器里训练音色 |
+| 克隆音色 | 默认是 Edge 的中文神经网络语音（零密钥、零按量账单，要联网）。离线可选 Piper。`cosyvoice`、`gpt-sovits`、`f5` 仍吃一段参考音频 | Edge、Piper 和三个克隆引擎的听感都要在你的机器上确认。这里没有打到微软接口，也没有听过合成结果 | 没有在浏览器里训练音色 |
 | 推流到抖音等平台 | 多目的地 RTMP/RTMPS，密钥加密，FFmpeg 或 LiveKit Egress。预览间只是试看 | 用你的推流地址才能确认平台侧收得到 | 没有代开播、没有平台登录 |
 | 按商品自动写口播 | 已有。默认本地模板，也可接兼容 OpenAI 的模型 | 模型质量取决于你填的接口 | 没有商品知识的向量库 |
 | 弹幕问答，不必先配问答库 | 已有。本地回答用标题、价格、卖点和发货口径；问答对上了才用问答。接模型时，提示词写明问答列表可以为空，并带上商品介绍 | 模型回答要你自己看是否编造 | 没有单独的检索服务 |
-| 预生成讲解，实时插入回答 | HeyGem 在口播生成后预先提交成片；观众回答默认不等成片，先用本地肖像。MuseTalk 在大约 8 秒内返回视频就插进这一句 | 成片速度和嘴型要在 GPU 上看 | 回答没有单独的实时嘴型模型跑在本进程里 |
+| 预生成讲解，实时插入回答 | 本机服务先出 wav。MuseTalk 在 `LINGBO_TALK_WAIT_MS`（默认 8 秒）内写出 mp4 就插进这一句，否则二维嘴接着说。HeyGem 仍可预生成口播成片 | 第一句要检脸，模型加载和帧率要在 GPU 上看 | 常驻进程还不是官方那个交互式 realtime 脚本；超时的句子不会补播口型视频 |
 | 导播台人工接管 | 已有：暂停、继续、插播一句、下一句、换下一个商品、自动 / 半自动 | 不需要 GPU。开播后在控制台「导播台」就能试 | 没有单独的硬件导播台 |
 | 7×24 轮播 | `loop` 默认开，商品名单讲完再从头 | 长时间运行要你自己盯进程 | 没有进程守护和断线告警服务 |
 | AI 数字人标识 | 默认打开。播出页、预览间和导播画面上有「AI数字人直播」，可以关掉 | 平台是否认这个字样，要看各平台当时的规则 | 没有按平台自动切换不同标识文案 |
@@ -484,10 +599,13 @@ docker-compose.rtmp.yml
 ```bash
 npm test
 npm run typecheck
+python3 services/lingbo-avatar/tests/test_contract.py
 ```
 
-测试覆盖商品存储、主播人设的保存和未知形象回退、口型时间轴、HTTP 形象和 MuseTalk 的请求与失败回退、克隆音色的请求形状、开播后把口播视频地址带上、暂停时插播不先说、关掉循环后本轮商品讲完就结束、本地话术和问答、模型或语音失败时的回退、开播后回答观众、LiveKit 令牌的推流权限、没配密钥时退回本地房间、串流密钥加密、FFmpeg 断线重连、Egress 的 RTMP 参数，以及抖音评论回调进房后被主播回答。
+`npm test` 只跑 Node。Python 那条在无显卡的环境里也能过：它不下载模型，也不访问微软。
+
+测试覆盖商品存储、主播人设的保存和未知形象回退、口型时间轴、HTTP 形象和 MuseTalk 的请求与失败回退、本机数字人服务不可达时退回二维肖像、有口型视频时把 mp4 存进上传目录、克隆音色的请求形状、开播后把口播视频地址带上、暂停时插播不先说、关掉循环后本轮商品讲完就结束、本地话术和问答、模型或语音失败时的回退、开播后回答观众、LiveKit 令牌的推流权限、本机数字人进房令牌、没配密钥时退回本地房间、串流密钥加密、FFmpeg 断线重连、Egress 的 RTMP 参数，以及抖音评论回调进房后被主播回答。
 
 ## 上线之前
 
-这是单机可跑的商家工具，还没有登录。不要把 API 和评论回调直接暴露到公网。串流密钥在本机加密，换机器时带上 `OUTPUT_SECRET` 或 `output.key`。正式使用前至少还要补：账号与权限、评论审核、广告法范围内的承诺校验、真实库存和订单、把 JSON 换成数据库。本地口型是按字和音量估算的。要对平台播出更接近真人的嘴型，用 `AVATAR_PROVIDER=http` 接一段一段的口播视频，用 `AVATAR_PROVIDER=heygem` 在有显卡的机器上预生成口播成片，用 `AVATAR_PROVIDER=musetalk` 接只动嘴的口型服务，或用 `AVATAR_PROVIDER=livekit` 接 Agents 形象插件。音色用 `cosyvoice`、`gpt-sovits` 或 `f5`，再由 Egress 推到平台。HeyGem 不是实时嘴，回复默认仍走本地肖像。浏览器朗读仍然进不了推流。播出页默认带「AI数字人直播」。不要无人值守地开着纯循环。
+这是单机可跑的商家工具，还没有登录。不要把 API 和评论回调直接暴露到公网。串流密钥在本机加密，换机器时带上 `OUTPUT_SECRET` 或 `output.key`。正式使用前至少还要补：账号与权限、评论审核、广告法范围内的承诺校验、真实库存和订单、把 JSON 换成数据库。默认形象是本机数字人服务。服务没起来时，口型仍按字和音量画在肖像上。有显卡时按上文启动 `services/lingbo-avatar`，来得及的句子会换成 MuseTalk 口型。也可以改用 `AVATAR_PROVIDER=http`、`heygem`、`musetalk`，或 `livekit` 接 Agents 里的 Tavus、Hedra、Simli、bitHuman。音色默认是本机服务里的 Edge；要克隆音色再用 `cosyvoice`、`gpt-sovits` 或 `f5`。HeyGem 的成片是离线的，回复默认仍走本地肖像。浏览器朗读仍然进不了推流。播出页默认带「AI数字人直播」。不要无人值守地开着纯循环。

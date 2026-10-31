@@ -9,3 +9,8 @@ web/dist
 *.log
 .DS_Store
 *.tmp
+services/lingbo-avatar/models/
+services/lingbo-avatar/third_party/
+services/lingbo-avatar/media/
+**/__pycache__/
+*.pyc

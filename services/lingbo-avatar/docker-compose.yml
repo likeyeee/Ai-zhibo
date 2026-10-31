@@ -1,0 +1,18 @@
+services:
+  lingbo-avatar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8790:8790"
+    gpus: all
+    environment:
+      LINGBO_TTS: edge
+      LINGBO_TALKING_HEAD: auto
+      MUSETALK_ROOT: /models/MuseTalk
+      LINGBO_IN_DOCKER: "1"
+      LINGBO_TALK_WAIT_MS: "8000"
+    volumes:
+      - ./models:/models
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

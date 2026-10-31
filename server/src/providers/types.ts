@@ -25,5 +25,7 @@ export interface SpeechClip {
 
 export interface TtsProvider {
   readonly id: TtsProviderId;
+  readonly degraded?: boolean;
+  refresh?(): Promise<void>;
   synthesize(text: string, persona: Persona): Promise<SpeechClip>;
 }

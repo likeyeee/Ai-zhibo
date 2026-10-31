@@ -12,6 +12,7 @@
  * LiveKit Agents 适合把 TTS 音频从服务端推上来。那一步不放进本进程：
  * 把 LIVEKIT_HOST_PUBLISHER 设为 agent 后，浏览器不再推画面，
  * 由外部 Agent 以身份 host 进房，并监听 topic `lingbo` 里的 speech 包。
+ * 设为 lingbo 时，浏览器同样不推音视频，由本机数字人服务以身份 lingbo-avatar 进房。
  */
 import { AccessToken } from 'livekit-server-sdk';
 import type { RealtimeJoin, RealtimeRole } from '@lingbo/shared';
@@ -44,6 +45,7 @@ class LocalRealtime implements RealtimeProvider {
       token: null,
       role: input.role,
       publishMedia: false,
+      hostPublisher: 'browser',
     };
   }
 }
@@ -56,6 +58,7 @@ export class LiveKitRealtime implements RealtimeProvider {
   async join(input: { sessionId: string; role: RealtimeRole; identity: string; name: string }): Promise<RealtimeJoin> {
     const room = liveKitRoomName(input.sessionId);
     const publishMedia = input.role === 'host' && this.config.livekitHostPublisher === 'browser';
+    const hostPublisher = this.config.livekitHostPublisher;
     const token = new AccessToken(this.config.livekitApiKey, this.config.livekitApiSecret, {
       identity: input.identity,
       name: input.name,
@@ -75,6 +78,24 @@ export class LiveKitRealtime implements RealtimeProvider {
       token: await token.toJwt(),
       role: input.role,
       publishMedia,
+      hostPublisher,
     };
   }
+}
+
+export async function mintPublisherToken(config: AppConfig, sessionId: string): Promise<string | null> {
+  if (!config.livekitUrl || !config.livekitApiKey || !config.livekitApiSecret) return null;
+  const token = new AccessToken(config.livekitApiKey, config.livekitApiSecret, {
+    identity: 'lingbo-avatar',
+    name: '灵播数字人',
+    ttl: '6h',
+  });
+  token.addGrant({
+    roomJoin: true,
+    room: liveKitRoomName(sessionId),
+    canPublish: true,
+    canSubscribe: true,
+    canPublishData: true,
+  });
+  return token.toJwt();
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../config';
-import { LiveKitRealtime, createRealtime, liveKitRoomName } from './realtime';
+import { LiveKitRealtime, createRealtime, liveKitRoomName, mintPublisherToken } from './realtime';
 
 describe('realtime provider', () => {
   it('stays local when LiveKit is not configured', async () => {
@@ -45,6 +45,25 @@ describe('realtime provider', () => {
     expect(host.publishMedia).toBe(false);
     expect(grants(host.token ?? '').canPublish).toBe(false);
     expect(grants(host.token ?? '').canPublishData).toBe(true);
+    expect(host.hostPublisher).toBe('agent');
+  });
+
+  it('lets the local digital human publish while the browser stays a viewer', async () => {
+    const config = loadConfig({
+      REALTIME_PROVIDER: 'livekit',
+      LIVEKIT_URL: 'ws://localhost:7880',
+      LIVEKIT_API_KEY: 'devkey',
+      LIVEKIT_API_SECRET: 'secret',
+      LIVEKIT_HOST_PUBLISHER: 'lingbo',
+    });
+    const provider = new LiveKitRealtime(config);
+    const host = await provider.join({ sessionId: 'room-3', role: 'host', identity: 'host', name: '小林' });
+    expect(host.publishMedia).toBe(false);
+    expect(host.hostPublisher).toBe('lingbo');
+    expect(grants(host.token ?? '').canPublish).toBe(false);
+    const publisher = await mintPublisherToken(config, 'room-3');
+    expect(grants(publisher ?? '').canPublish).toBe(true);
+    expect(JSON.parse(Buffer.from((publisher ?? '').split('.')[1] ?? '', 'base64url').toString()).sub).toBe('lingbo-avatar');
   });
 });
 

@@ -30,6 +30,8 @@ export interface AppConfig {
   avatarHttpUrl: string;
   avatarApiKey: string;
   musetalkUrl: string;
+  lingboAvatarUrl: string;
+  lingboClipTimeoutMs: number;
   heygemVideoUrl: string;
   heygemTtsUrl: string;
   heygemDataDir: string;
@@ -80,8 +82,8 @@ function clamp(value: number, min: number, max: number): number {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const llm = text(env, 'LLM_PROVIDER', 'mock');
-  const tts = text(env, 'TTS_PROVIDER', 'mock');
-  const avatar = text(env, 'AVATAR_PROVIDER', 'local');
+  const tts = text(env, 'TTS_PROVIDER', 'lingbo');
+  const avatar = text(env, 'AVATAR_PROVIDER', 'lingbo');
   return {
     host: text(env, 'HOST', '0.0.0.0'),
     port: clamp(Math.round(num(env, 'PORT', 8787)), 1, 65535),
@@ -104,6 +106,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     avatarHttpUrl: text(env, 'AVATAR_HTTP_URL', ''),
     avatarApiKey: text(env, 'AVATAR_API_KEY', ''),
     musetalkUrl: text(env, 'MUSETALK_URL', '').replace(/\/$/, ''),
+    lingboAvatarUrl: text(env, 'LINGBO_AVATAR_URL', 'http://127.0.0.1:8790').replace(/\/$/, ''),
+    lingboClipTimeoutMs: clamp(Math.round(num(env, 'LINGBO_CLIP_TIMEOUT_MS', 15000)), 500, 180000),
     heygemVideoUrl: text(env, 'HEYGEM_VIDEO_URL', 'http://127.0.0.1:8383').replace(/\/$/, ''),
     heygemTtsUrl: text(env, 'HEYGEM_TTS_URL', 'http://127.0.0.1:18180').replace(/\/$/, ''),
     heygemDataDir: text(env, 'HEYGEM_DATA_DIR', ''),
@@ -120,7 +124,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     livekitUrl: text(env, 'LIVEKIT_URL', ''),
     livekitApiKey: text(env, 'LIVEKIT_API_KEY', ''),
     livekitApiSecret: text(env, 'LIVEKIT_API_SECRET', ''),
-    livekitHostPublisher: text(env, 'LIVEKIT_HOST_PUBLISHER', 'browser') === 'agent' ? 'agent' : 'browser',
+    livekitHostPublisher: hostPublisher(text(env, 'LIVEKIT_HOST_PUBLISHER', 'browser')),
     livekitAgentName: text(env, 'LIVEKIT_AGENT_NAME', 'lingbo-host'),
     outputProvider: outputProvider(text(env, 'OUTPUT_PROVIDER', 'mock')),
     programBaseUrl: text(env, 'PROGRAM_BASE_URL', '').replace(/\/$/, ''),
@@ -131,13 +135,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 }
 
 function ttsProvider(value: string): TtsProviderId {
-  if (value === 'http' || value === 'cosyvoice' || value === 'gpt-sovits' || value === 'f5') return value;
+  if (value === 'http' || value === 'cosyvoice' || value === 'gpt-sovits' || value === 'f5' || value === 'lingbo') return value;
   return 'mock';
 }
 
 function avatarProvider(value: string): AvatarProviderId {
-  if (value === 'video' || value === 'http' || value === 'livekit' || value === 'heygem' || value === 'musetalk') return value;
+  if (
+    value === 'video' ||
+    value === 'http' ||
+    value === 'livekit' ||
+    value === 'heygem' ||
+    value === 'musetalk' ||
+    value === 'lingbo'
+  ) {
+    return value;
+  }
   return 'local';
+}
+
+function hostPublisher(value: string): HostPublisherMode {
+  if (value === 'agent' || value === 'lingbo') return value;
+  return 'browser';
 }
 
 function outputProvider(value: string): OutputConfigId {

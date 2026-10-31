@@ -125,7 +125,11 @@ const destinationSchema = z.object({
 export function registerRoutes(app: FastifyInstance, deps: Deps) {
   app.get('/api/health', async () => ({ ok: true }));
 
-  app.get('/api/system', async () => systemPayload(deps));
+  app.get('/api/system', async () => {
+    await deps.tts.refresh?.();
+    await deps.avatar.refresh?.();
+    return systemPayload(deps);
+  });
 
   app.get('/api/settings', async () => ({ persona: deps.store.getPersona() }));
 
@@ -478,7 +482,7 @@ export function systemPayload(deps: Deps): SystemInfo {
     tts: {
       id: deps.tts.id,
       configured: deps.config.ttsProvider,
-      degraded: deps.config.ttsProvider !== 'mock' && deps.tts.id !== deps.config.ttsProvider,
+      degraded: Boolean(deps.tts.degraded) || (deps.config.ttsProvider !== 'mock' && deps.tts.id !== deps.config.ttsProvider),
     },
     avatar: deps.avatar.presentation,
     realtime: {

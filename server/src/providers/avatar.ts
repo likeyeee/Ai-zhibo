@@ -13,10 +13,13 @@
  * 没配数据目录、驱动视频或参考音频时退回 local。
  * musetalk：POST { text, audioUrl, portraitUrl, mouthOnly: true, hostId, language } 到 MUSETALK_URL，
  * 期望 { "videoUrl": "..." }。只驱动嘴部。超时约 8 秒，失败或没填地址时退回 local。
+ * lingbo：本机 services/lingbo-avatar。服务没起来时退回 local。
+ * 返回的视频地址只有 MuseTalk 写出了口型才使用；静图成片不会替换二维口型。
  */
 import type { AvatarProviderId, Persona, SpeechPurpose } from '@lingbo/shared';
 import type { AppConfig } from '../config';
 import { HeygemAvatar } from './heygem';
+import { lingboClip, lingboHealth, lingboPublish } from './lingbo';
 
 export interface AvatarPresentation {
   id: AvatarProviderId;
@@ -33,10 +36,21 @@ export interface AvatarClipInput {
   portraitUrl?: string | null;
 }
 
+export interface AvatarRoomPublish {
+  text: string;
+  persona: Persona;
+  audioUrl?: string | null;
+  videoUrl?: string | null;
+  livekitUrl: string;
+  token: string;
+}
+
 export interface AvatarProvider {
   readonly presentation: AvatarPresentation;
   prepare?(input: { texts: string[]; persona: Persona }): void;
+  refresh?(): Promise<void>;
   clipFor(input: AvatarClipInput): Promise<string | null>;
+  publishToRoom?(input: AvatarRoomPublish): Promise<void>;
 }
 
 export function createAvatar(config: AppConfig, fetchImpl: typeof fetch = fetch): AvatarProvider {
@@ -46,6 +60,7 @@ export function createAvatar(config: AppConfig, fetchImpl: typeof fetch = fetch)
 class SwitchingAvatar implements AvatarProvider {
   private clipFailed = false;
   private musetalkFailed = false;
+  private lingboDown = true;
   private readonly heygem: HeygemAvatar | null;
 
   constructor(
@@ -74,15 +89,30 @@ class SwitchingAvatar implements AvatarProvider {
       if (!this.config.musetalkUrl) return { id: 'local', configured, degraded: true, videoUrl: null };
       return { id: 'musetalk', configured, degraded: this.musetalkFailed, videoUrl: null };
     }
+    if (configured === 'lingbo') {
+      if (this.lingboDown) return { id: 'local', configured, degraded: true, videoUrl: null };
+      return { id: 'lingbo', configured, degraded: this.clipFailed, videoUrl: null };
+    }
     return { id: 'local', configured: 'local', degraded: false, videoUrl: null };
+  }
+
+  async refresh() {
+    if (this.config.avatarProvider !== 'lingbo') return;
+    this.lingboDown = !(await lingboHealth(this.config.lingboAvatarUrl, this.fetchImpl)).ok;
   }
 
   prepare(input: { texts: string[]; persona: Persona }) {
     this.heygem?.prepare(input);
   }
 
+  async publishToRoom(input: AvatarRoomPublish): Promise<void> {
+    if (this.config.livekitHostPublisher !== 'lingbo') return;
+    await lingboPublish(this.config, this.fetchImpl, input);
+  }
+
   async clipFor(input: AvatarClipInput): Promise<string | null> {
     if (this.heygem) return this.heygem.clipFor(input);
+    if (this.config.avatarProvider === 'lingbo') return this.lingboClip(input);
     if (this.config.avatarProvider === 'musetalk' && this.config.musetalkUrl) return this.musetalkClip(input);
     if (this.config.avatarProvider !== 'http' || !this.config.avatarHttpUrl) return null;
     try {
@@ -108,6 +138,23 @@ class SwitchingAvatar implements AvatarProvider {
     } catch (error) {
       this.clipFailed = true;
       console.error('形象服务调用失败，改用本地肖像', error instanceof Error ? error.message : 'avatar_failed');
+      return null;
+    }
+  }
+
+  private async lingboClip(input: AvatarClipInput): Promise<string | null> {
+    const snap = await lingboHealth(this.config.lingboAvatarUrl, this.fetchImpl);
+    this.lingboDown = !snap.ok;
+    if (!snap.ok) return null;
+    try {
+      const video = await lingboClip(this.config, this.fetchImpl, input);
+      this.clipFailed = false;
+      return video;
+    } catch (error) {
+      const down = !(await lingboHealth(this.config.lingboAvatarUrl, this.fetchImpl).catch(() => ({ ok: false }))).ok;
+      this.lingboDown = down;
+      this.clipFailed = !down;
+      console.error('本机形象不可用，改用本地肖像', error instanceof Error ? error.message : 'avatar_failed');
       return null;
     }
   }
